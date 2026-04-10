@@ -18,7 +18,10 @@ The repository is made up of 4 folders, corresponding to various parts of the pr
 
 **External Links**
 - **[Funding: NIH/NIEHS, 1R01HL178727-01](https://www.niehs.nih.gov/)**
-- **[Spatial Health Lab](https://health.oregonstate.edu/research/spatial-health)**
+- **[Spatial Health Lab](https://health.oregonstate.edu/research/spatial-health)**\
+- **[Sentinel-2](https://dataspace.copernicus.eu/data-collections/copernicus-sentinel-missions/sentinel-2)**
+- **[Google Earth Engine](https://earthengine.google.com/)**
+- **[PyTorch](https://pytorch.org/get-started/locally/)**
   
 **Related Publications**
 - **[Sentinel-2 and LiDAR](https://www.nature.com/articles/s41598-025-10971-6)**
