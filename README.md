@@ -1,5 +1,5 @@
 # remoteUrbanTreeId
-Identify urban tree species from remote sensing datasets
+Identify trees in urban areas and classify tree locations as broadleaf, evergreen or mixed
 
 **Author:** [Andrew Larkin](https://www.linkedin.com/in/andrew-larkin-525ba3b5/) <br>
 **Affiliation:** [Oregon State University, College of Health](https://health.oregonstate.edu/) <br>
