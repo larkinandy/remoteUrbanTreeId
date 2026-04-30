@@ -25,9 +25,9 @@ The repository is made up of 4 folders, corresponding to various parts of the pr
   
 **Related Publications**
 - **[Sentinel-2 and LiDAR](https://www.nature.com/articles/s41598-025-10971-6)**
-- **[MultiChannelTimeSeries](https://www.nature.com/articles/s41467-020-15432-4)**
+- **[UrbanTreeDetector](https://www.sciencedirect.com/science/article/pii/S1569843224002024)**
 
 **Related Repositories**
 - **[PollenModeling](https://github.com/larkinandy/PollenModeling)**
-- **[ECGTimeSeries](https://github.com/antonior92/automatic-ecg-diagnosis)**
+- **[UrbanTreeDetector](https://github.com/jonathanventura/urban-tree-detection)**
 
