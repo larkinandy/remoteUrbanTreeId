@@ -5,7 +5,7 @@ Identify trees in urban areas and classify tree locations as broadleaf, evergree
 **Affiliation:** [Oregon State University, College of Health](https://health.oregonstate.edu/) <br>
 
 **Summary** <br>
-This GitHub repo contains python scripts for collecting training datasets, training and evaluating a machine learning model for predicting urban tree species from remote sensing products. 
+This GitHub repo contains python scripts for collecting training datasets, training and evaluating a machine learning model for predicting urban tree locations and broad classifications (broadleaf, evergreen, or mixed). 
 
 **Why Urban Trees** <br>
 For the pollen study (see GitHub in related repositories links below). More details coming later...
