@@ -346,7 +346,6 @@ def fuse_tree_year_probs(df_split, probs, class_names):
 def main():
     X_PATH = r"C:/users/larki/Desktop/PollenSense/xDataNormalized.csv"
     Y_PATH = r"C:/users/larki/Desktop/PollenSense/yDataInteger.csv"
-    HEIGHT_PATH = r"C:/users/larki/Desktop/PollenSense/GIS/meta_trees_height_features.csv"
     OUT_DIR = r"C:/users/larki/Desktop/"
 
     USE_TWO_BROAD_CLASSES = False
@@ -359,23 +358,12 @@ def main():
 
     genus_name_col = "BOTANICALG"
 
-    height_cols = [
-        "ht_center_1m",
-        "ht_max_3m",
-        "ht_mean_3m",
-        "ht_p25_5m",
-        "ht_p50_5m",
-        "ht_p90_5m",
-        "ht_std_3m",
-    ]
-
     os.makedirs(OUT_DIR, exist_ok=True)
     broad_tag = "2broad" if USE_TWO_BROAD_CLASSES else "3broad"
 
     print("Loading data...")
     x_df = pd.read_csv(X_PATH)
     y_df = pd.read_csv(Y_PATH)
-    h_df = pd.read_csv(HEIGHT_PATH)
 
     x_df = add_sentinel2_indices(x_df)
 
@@ -416,26 +404,12 @@ def main():
     print("Tree-year rows:", len(pheno_df))
 
     # ------------------------------------------------
-    # Height features
-    # ------------------------------------------------
-    needed_height_cols = ["uniqueID"] + height_cols
-    missing_height_cols = [c for c in needed_height_cols if c not in h_df.columns]
-    if missing_height_cols:
-        raise ValueError(f"Missing columns in height file: {missing_height_cols}")
-
-    h_tree = h_df[needed_height_cols].copy().drop_duplicates(subset=["uniqueID"])
-
-    # ------------------------------------------------
     # Merge
     # ------------------------------------------------
     model_df = pheno_df.merge(
         y_tree[["uniqueID", "broad_label", "broad_idx"]],
         on="uniqueID",
         how="inner"
-    ).merge(
-        h_tree,
-        on="uniqueID",
-        how="left"
     )
 
     if model_df.empty:
@@ -625,7 +599,6 @@ def main():
     with open(prefix + "_metadata.json", "w") as f:
         json.dump({
             "phenology_variables": ["NDVI", "CIre"],
-            "height_cols": height_cols,
             "predictor_cols": predictor_cols,
             "broad_classes": broad_classes,
             "use_two_broad_classes": USE_TWO_BROAD_CLASSES,
