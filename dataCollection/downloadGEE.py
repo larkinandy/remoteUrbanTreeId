@@ -18,7 +18,7 @@ sys.path.append(GIT_PATH)
 load_dotenv(dotenv_path=GIT_PATH + ".env")
 
 ee.Authenticate()
-ee.Initialize(os.getenv("GEE_PROJECT")
+ee.Initialize(os.getenv("GEE_PROJECT"))
 
 INTERVAL_DAYS = 7
 
