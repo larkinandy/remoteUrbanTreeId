@@ -5,7 +5,7 @@ import numpy as np
 # ============================================================
 # USER SETTINGS
 # ============================================================
-OUT_DIR = r"C:/users/larki/Desktop/"
+OUT_DIR = r"C:/users/larki/Desktop/PollenSense"
 
 ROW_PRED_PATH = os.path.join(
     OUT_DIR,

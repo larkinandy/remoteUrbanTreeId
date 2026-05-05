@@ -618,7 +618,7 @@ def main():
     X_PATH = r"C:/users/larki/Desktop/PollenSense/xDataNormalized.csv"
     Y_PATH = r"C:/users/larki/Desktop/PollenSense/yDataInteger.csv"
     ERA5_FOLDER = r"C:/users/larki/Desktop/PollenSense/GIS/ERA5"
-    OUT_DIR = r"C:/users/larki/Desktop/"
+    OUT_DIR = r"C:/users/larki/Desktop/PollenSense/"
 
     S2_ID_COL = "uniqueID"
     S2_DATE_COL = "date"
