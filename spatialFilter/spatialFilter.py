@@ -7,11 +7,11 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 # ============================================================
 # Paths
 # ============================================================
-MIX_TREE_PATH = r"C:/users/larki/Desktop/mixTreeTest.csv"
+MIX_TREE_PATH = r"C:/users/larki/Desktop/PollenSense/mixTreeTest.csv"
 
-TRAIN_PRED_PATH = r"C:/users/larki/Desktop/hybrid_lstm_broad2_treefused_era5_train_tree_predictionsv5.csv"
-VAL_PRED_PATH   = r"C:/users/larki/Desktop/hybrid_lstm_broad2_treefused_era5_val_tree_predictionsv5_seq1_ann1_height0.csv"
-TEST_PRED_PATH  = r"C:/users/larki/Desktop/hybrid_lstm_broad2_treefused_era5_test_tree_predictionsv5_seq1_ann1_height0.csv"
+TRAIN_PRED_PATH = r"C:/users/larki/Desktop/PollenSense/hybrid_lstm_broad2_treefused_era5_train_tree_predictionsv5.csv"
+VAL_PRED_PATH   = r"C:/users/larki/Desktop/PollenSense/hybrid_lstm_broad2_treefused_era5_val_tree_predictionsv5_seq1_ann1_height0.csv"
+TEST_PRED_PATH  = r"C:/users/larki/Desktop/PollenSense/hybrid_lstm_broad2_treefused_era5_test_tree_predictionsv5_seq1_ann1_height0.csv"
 
 OUT_DIR = r"C:/users/larki/Desktop/tree_binary_QA_mixed_removed_threshold_sweep"
 os.makedirs(OUT_DIR, exist_ok=True)
