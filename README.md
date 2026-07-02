@@ -22,10 +22,9 @@ The repository is made up of 3 folders, corresponding to various stages of the p
 **External Links**
 - **[Funding: NIH/NIEHS, 1R01HL178727-01](https://www.niehs.nih.gov/)**
 - **[Spatial Health Lab](https://health.oregonstate.edu/research/spatial-health)**
-- **[Sentinel-2](https://dataspace.copernicus.eu/data-collections/copernicus-sentinel-missions/sentinel-2)**
+
 - **[Google Earth Engine](https://earthengine.google.com/)**
-- **[NAIP](https://naip-usdaonline.hub.arcgis.com/)**
-- **[ERA5](https://climatedataguide.ucar.edu/climate-data/era5-atmospheric-reanalysis)**
+
 - **[PyTorch](https://pytorch.org/get-started/locally/)**
   
 **Related Publications**
