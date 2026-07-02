@@ -9,7 +9,7 @@ This GitHub repo contains python scripts for collecting training datasets, train
 
 
 **Why Urban Trees** <br>
-For the pollen study (see GitHub in related repositories links below). More details coming later...
+Urban trees provide important environmental benefits, including shade, cooling, carbon storage, stormwater interception, and neighborhood greening, but they also shape local pollen exposure in ways that vary strongly by species, location, and season. Many cities maintain incomplete or inconsistent tree inventories, which limits the ability to estimate species-specific pollen sources across large urban areas. This project uses remote sensing products and machine learning to improve urban tree identification, supporting downstream work that links tree composition, meteorology, and airborne pollen measurements to better understand spatial patterns of allergenic exposure.
 
 **Repository Structure** <br>
 The repository is made up of 3 folders, corresponding to various stages of the project
