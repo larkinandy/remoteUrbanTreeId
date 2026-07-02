@@ -7,3 +7,9 @@
 # ignore compiled python scripts
 *.pyc
 
+# ignore local/generated data collection files
+/dataCollection/**
+
+# ignore local dependency installs
+/.deps/**
+
