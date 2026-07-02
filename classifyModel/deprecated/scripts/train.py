@@ -2,6 +2,8 @@ import os
 import json
 import time
 import random
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -24,37 +26,41 @@ from sklearn.metrics import (
 )
 
 try:
-    from .hybrid_meteor_data import (
-        YearHybridDataset,
+    from classifyModel.scripts.data import (
         add_sentinel2_indices,
         build_tree_year_records_with_annual_metrics_and_era5,
         collate_year_hybrid_batch,
+        YearHybridDataset,
         load_era5_folder,
         make_two_broad_labels,
     )
-    from .hybrid_meteor_inference import (
+    from classifyModel.scripts.inference import (
         evaluate_with_probs,
         fuse_tree_year_probs_simple,
         fuse_tree_year_probs_temporal,
     )
-    from .hybrid_meteor_io import load_preprocessed_cache, save_preprocessed_cache
-    from .hybrid_meteor_model import HybridYearLSTMClassifier
+    from classifyModel.scripts.io import load_preprocessed_cache, save_preprocessed_cache
+    from classifyModel.models.lstm import HybridYearLSTMClassifier
 except ImportError:
-    from hybrid_meteor_data import (
-        YearHybridDataset,
+    REPO_ROOT = Path(__file__).resolve().parents[2]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+
+    from classifyModel.scripts.data import (
         add_sentinel2_indices,
         build_tree_year_records_with_annual_metrics_and_era5,
         collate_year_hybrid_batch,
+        YearHybridDataset,
         load_era5_folder,
         make_two_broad_labels,
     )
-    from hybrid_meteor_inference import (
+    from classifyModel.scripts.inference import (
         evaluate_with_probs,
         fuse_tree_year_probs_simple,
         fuse_tree_year_probs_temporal,
     )
-    from hybrid_meteor_io import load_preprocessed_cache, save_preprocessed_cache
-    from hybrid_meteor_model import HybridYearLSTMClassifier
+    from classifyModel.scripts.io import load_preprocessed_cache, save_preprocessed_cache
+    from classifyModel.models.lstm import HybridYearLSTMClassifier
 
 # ============================================================
 # Reproducibility
@@ -615,10 +621,11 @@ def run_final_model_analysis(
 def main():
     SEED = 42
 
-    X_PATH = r"C:/users/larki/Desktop/PollenSense/xDataNormalized.csv"
-    Y_PATH = r"C:/users/larki/Desktop/PollenSense/yDataInteger.csv"
-    ERA5_FOLDER = r"C:/users/larki/Desktop/PollenSense/GIS/ERA5"
-    OUT_DIR = r"C:/users/larki/Desktop/PollenSense/"
+    MODEL_TRAINING_FOLDER = "C:/users/larki/Desktop/PollenSense/training/AnnArbor/"
+    X_PATH = MODEL_TRAINING_FOLDER + "sentinelDataNormalized.csv"
+    Y_PATH = MODEL_TRAINING_FOLDER + "yDataInteger.csv"
+    ERA5_FOLDER = MODEL_TRAINING_FOLDER + "ERA5"
+    OUT_DIR = r"C:/users/larki/Desktop/PollenSense/training/results"
 
     S2_ID_COL = "uniqueID"
     S2_DATE_COL = "date"
@@ -630,7 +637,7 @@ def main():
     NUM_EPOCHS = 80
     PATIENCE = 10
 
-    FORCE_REBUILD_CACHE = True
+    FORCE_REBUILD_CACHE = False
     RUN_TRAINING = True
 
     USE_RECALL_AWARE_LOSS = True
@@ -641,7 +648,7 @@ def main():
     # Feature ablation toggles
     # Defaults preserve current behavior
     # ------------------------------------------------------------
-    USE_SEQUENCE_BRANCH = False
+    USE_SEQUENCE_BRANCH = True
     USE_ANNUAL_METRICS = True
 
     ABLATION_TAG = (
