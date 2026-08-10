@@ -90,7 +90,7 @@ commands.
 ## Author
 
 [Andrew Larkin](https://www.linkedin.com/in/andrew-larkin-525ba3b5/)  
-Oregon State University, College of Health
+[Affiliation: Oregon State University, College of Health](https://health.oregonstate.edu/)
 
 ## Funding and related resources
 
