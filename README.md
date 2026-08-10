@@ -8,9 +8,6 @@ Sentinel-2 phenology, satellite embeddings, and daily PRISM climate variables.
 It includes preprocessing, model-input shard assembly, taxon-discriminator
 training, centroid-based group selection, and final k=6 classification.
 
-> Links to model weights and the training dataset are provided in
-> the project links section below
-
 ## Overview
 
 The current workflow has three modeling stages:
