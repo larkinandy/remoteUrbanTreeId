@@ -36,9 +36,9 @@ signatures. They should not be interpreted as formal botanical ranks.
 
 **Data and model weights**
 
-[Training Data Shards](https://www.linkedin.com/in/andrew-larkin-525ba3b5/)  
-[Discriminator Model Weights](https://www.linkedin.com/in/andrew-larkin-525ba3b5/)  
-[Classifier Model Weights](https://www.linkedin.com/in/andrew-larkin-525ba3b5/)  
+[Training Data Shards](https://drive.google.com/file/d/1EQMfVH5jSy4wMFY_SdeiGh6jlVpExmff/view?usp=sharing)  
+[Discriminator Model Weights](https://drive.google.com/file/d/18XbRq-QmOd4JK0uw4ois8fOJoFIqQH3P/view?usp=sharing)  
+[Classifier Model Weights](https://drive.google.com/file/d/1i0VKAXUv2_UB2Y_uVvMKgp0pG83G9Cve/view?usp=sharing)  
 
 **Funding and related resources**
 
