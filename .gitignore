@@ -7,8 +7,19 @@
 # ignore compiled python scripts
 *.pyc
 
+# ignore Windows command scripts
+*.cmd
+
+# ignore dot-prefixed directories at any depth
+.*/
+
 # ignore local/generated data collection files
 /dataCollection/**
+
+# ignore generated figures and model outputs
+/figure_scripts/
+/outputs/
+/analysis_exports/
 
 # ignore local dependency installs
 /.deps/**
