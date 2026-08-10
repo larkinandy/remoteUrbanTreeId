@@ -5,6 +5,8 @@ products for a new dataset with tree-crown coordinates. Crown locations are
 reduced to unique occupied 10 m cells so trees in the same Sentinel-2 pixel are
 downloaded once and joined back to individual crowns later.
 
+<img src = https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/Sentinel2.png width="1024">
+
 ## Files to keep
 
 | File | Role |
