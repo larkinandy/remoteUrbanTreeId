@@ -4,6 +4,9 @@ This folder contains the workflow for discovering and downloading USGS 3D
 Elevation Program (3DEP) LiDAR tiles and creating DTM, DSM, CHM, and point-count
 products centered on identified tree crowns.
 
+<img src = https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/CHM.png width="800">
+
+
 ## Folder contents
 
 | File | Purpose |
