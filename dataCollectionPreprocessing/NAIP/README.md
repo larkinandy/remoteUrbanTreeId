@@ -5,6 +5,9 @@ create RGBNIR image chips centered on identified tree crowns. The current
 pipeline operates on crown coordinates directly; it does not create
 Sentinel-cell-centered chips.
 
+<img src = https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/NAIP.png width="800">
+
+
 ## Folder contents
 
 | File | Purpose |
