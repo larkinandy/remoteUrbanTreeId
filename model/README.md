@@ -10,6 +10,12 @@ The active training sequence is:
 3. Train `train_clean_tree_id_centered_k6_classifier.py` with the selected
    `k06_partition.npz`.
 
+
+<img src = https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/Discriminator.png width="1024">
+
+<img src = https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/Architecture.png width="1024">
+
+
 ## Rebuild the k=5--12 Oracle experiment
 
 Install scikit-learn in the model environment, then run:
