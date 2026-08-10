@@ -3,6 +3,8 @@
 This folder covers the preprocessing boundary between detected tree crowns and
 the clean inventory records used by the crown-centered model.
 
+<img src = https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/treeCrown.png width="800">
+
 ## Step 1: detect tree crowns
 
 Clone the UrbanTreeDetector repository and create its TensorFlow 2.4.1 conda
