@@ -3,6 +3,8 @@
 A multimodal machine-learning pipeline for assigning urban trees to six
 remote-sensing-informed taxonomic groups.
 
+<img src = https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/SanDiego.png width="1024">
+
 The project combines tree-crown-centered aerial imagery, LiDAR structure,
 Sentinel-2 phenology, satellite embeddings, and daily PRISM climate variables.
 It includes preprocessing, model-input shard assembly, taxon-discriminator
