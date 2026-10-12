@@ -1,0 +1,11 @@
+{
+  "cities": 39,
+  "rows": 2303321,
+  "unique_crown_cells_city_sum": 1903500,
+  "missing_satellite_embedding_rows": 45539,
+  "missing_satellite_embedding_pct": 1.9771078356,
+  "rows_using_original_matching_export": 1727027,
+  "rows_using_supplemental_crown_cell_export": 530755,
+  "source_rows_sum_to_total": true,
+  "note": "Original and supplemental counts describe the historical study build. A from-scratch rebuild exports all final crown-centered cells directly."
+}
