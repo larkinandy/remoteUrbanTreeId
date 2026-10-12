@@ -1,0 +1,55 @@
+{
+  "environment": "treeid-gpu (repository environment.yml)",
+  "inventory": {
+    "inventory_pattern": "*_Final_*.csv",
+    "longitude_column": "longitude_coordinate",
+    "latitude_column": "latitude_coordinate",
+    "scientific_name_column": "scientific_name",
+    "common_name_column": "common_name",
+    "minimum_singleton_coordinate_records_percent": 50.0,
+    "duplicate_coordinate_action": "remove every record at an exactly duplicated coordinate"
+  },
+  "qa": {
+    "center_window_metres": 10.0,
+    "ndvi_threshold": 0.2,
+    "minimum_center_vegetation_fraction": 0.1,
+    "low_height_threshold_metres": 2.0,
+    "minimum_lidar_coverage_fraction": 0.5,
+    "minimum_vegetated_height_fraction": 0.02,
+    "maximum_saturation_fraction": 0.25,
+    "minimum_crop_valid_fraction": 0.01,
+    "hard_exclusions": [
+      "low_center_vegetation",
+      "insufficient_lidar_coverage_for_height",
+      "crop_failed",
+      "duplicate_inventory_coordinate",
+      "missing_sentinel_phenology",
+      "missing_satellite_embedding"
+    ],
+    "retained_warnings": [
+      "low_vegetated_height_with_lidar",
+      "high_crop_saturation",
+      "missing_lidar_chm"
+    ]
+  },
+  "assembly": {
+    "join_key": "tree_id",
+    "coordinate_decimals": 7,
+    "shard_size_records": 100000,
+    "maximum_sentinel_sequence_length": 80,
+    "require_raw_sentinel": true,
+    "exclude_qa_from_model": true,
+    "require_prism_normals": false,
+    "append_daily_prism": true,
+    "daily_prism_variables": ["ppt", "tmean", "vpdmax"],
+    "sentinel_end_date_inclusive": 20231231,
+    "compressed_npz": false,
+    "parallel_city_workers": 1
+  },
+  "path_placeholders": {
+    "DATA_ROOT": "local root containing modality products and generated shards",
+    "original_raw_sentinel_timeseries_root": "$DATA_ROOT/sentinel2_timeseries_original",
+    "supplemental_raw_sentinel_timeseries_root": "$DATA_ROOT/sentinel2_timeseries_supplemental"
+  },
+  "label_note": "The historical taxon_label column is a coarse preprocessing/source-screening label. Discriminator taxa and final model groups are derived separately."
+}

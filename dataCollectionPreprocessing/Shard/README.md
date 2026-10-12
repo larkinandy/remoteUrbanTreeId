@@ -1,113 +1,129 @@
 # Model-input shard assembly
 
-This folder is the final preprocessing boundary before model training. Its
-scripts align independently created modality products, validate row identity
-and completeness, and write the physical NPZ shards and manifests consumed by
-the models.
+This folder is the final preprocessing boundary before model training. The
+scripts normalize inventory records, calculate record-level QA, align all
+modality products by stable `tree_id`, and write the NPZ shards consumed by the
+discriminator and stage-two classifier.
 
-Training scripts belong in `model`; scripts that create or validate the
-training-ready shard files belong here.
+All commands use an explicit data root. In PowerShell, define it for the local
+workstation before running the examples:
 
-## Current tree-ID-centered pipeline
+```powershell
+$DATA_ROOT = "D:/urban-tree-data"
+```
 
-First, normalize the raw city inventory files into stable, clean `tree_id`
-records. This removes invalid coordinates and records sharing an exact
-coordinate, assigns taxon labels, and writes the metadata consumed by the
-tree-crown matching stage:
+The Python environment is the repository-level `treeid-gpu` environment in
+[`environment.yml`](../../environment.yml).
+
+## Pipeline order and dependencies
+
+1. `build_clean_tree_record_metadata.py` normalizes municipal inventories,
+   removes invalid and duplicated coordinates, and assigns stable `tree_id`
+   values.
+2. [`../treeCrown/spatial_join_clean_tree_records_to_detected_crowns.py`](../treeCrown/spatial_join_clean_tree_records_to_detected_crowns.py)
+   reads the metadata summary, excludes cities below the configured unique-
+   coordinate threshold, and matches retained records to detected crowns.
+3. The LiDAR, NAIP, Sentinel-2, satellite-embedding, and PRISM workflows create
+   their tree-centered products. See the READMEs in the sibling folders.
+4. `apply_tree_centered_crop_qa.py` calculates hard-exclusion and retained-
+   warning fields.
+5. `assemble_clean_tree_id_centered_model_input_shards.py` aligns the complete
+   products and writes training-ready shards.
+
+The historical metadata column `taxon_label` is a coarse preprocessing label
+used to identify catch-all source records. It is **not** a discriminator taxon,
+a remote-sensing-derived group, or a final model target. Discriminator labels
+are derived from normalized scientific names during model training.
+
+## 1. Normalize inventory records
 
 ```powershell
 python dataCollectionPreprocessing/Shard/build_clean_tree_record_metadata.py `
-  --inventory-root D:/tree_inventories `
+  --inventory-root "$DATA_ROOT/inventories" `
   --inventory-pattern "*_Final_*.csv" `
-  --output-root H:/TreeCenteredModelInputs/tree_record_metadata_clean `
+  --output-root "$DATA_ROOT/tree_record_metadata_clean" `
   --min-unique-coordinate-percent 50
 ```
 
-Review `tree_record_metadata_clean_summary.csv` before continuing. Cities below
-the configured unique-coordinate threshold are marked for exclusion and are
-not selected by the crown spatial-join script.
+The 50% rule is evaluated at the city level and recorded in
+`tree_record_metadata_clean_summary.csv`. This script does not silently remove
+an entire city; the downstream crown spatial join reads the flag and applies
+the city exclusion.
 
-After all crown-centered modality products have been created, calculate the
-record-level QA table used to screen shard rows:
+## 2. Calculate record-level QA
 
 ```powershell
 python dataCollectionPreprocessing/Shard/apply_tree_centered_crop_qa.py `
-  --crop-root H:/TreeCenteredModelInputs/tree_centered_naip_crops_clean `
-  --structure-dir H:/TreeCenteredModelInputs/tree_centered_chm_structure_clean `
-  --lidar-chm-root H:/TreeCenteredModelInputs/tree_centered_lidar_products_clean/CHM `
-  --sentinel-phenology-dir H:/TreeCenteredModelInputs/tree_centered_sentinel_phenology_clean `
-  --gee-dir H:/TreeCenteredModelInputs/tree_centered_gee_inputs_clean `
-  --output-dir H:/TreeCenteredModelInputs/tree_centered_crop_qa_clean
+  --crop-root "$DATA_ROOT/tree_centered_naip_crops_clean" `
+  --structure-dir "$DATA_ROOT/tree_centered_chm_structure_clean" `
+  --lidar-chm-root "$DATA_ROOT/tree_centered_lidar_products_clean/CHM" `
+  --sentinel-phenology-dir "$DATA_ROOT/tree_centered_sentinel_phenology_clean" `
+  --gee-dir "$DATA_ROOT/tree_centered_gee_inputs_clean" `
+  --output-dir "$DATA_ROOT/tree_centered_crop_qa_clean"
 ```
 
-This stage recomputes NAIP crop quality, central vegetation and LiDAR evidence,
-checks required sidecars, and writes `<city>_tree_centered_qa_metadata.csv`.
-The shard assembler uses `qa_exclude_from_model` from these files to omit
-records that do not meet the current model-input requirements.
+Hard exclusions are stored in `qa_exclude_from_model`. Other conditions remain
+available as warning fields for stratified evaluation. The exact study
+thresholds are frozen in
+[`provenance/study_shard_configuration.json`](provenance/study_shard_configuration.json).
 
-Use `assemble_clean_tree_id_centered_model_input_shards.py` for the current
-clean crown-centered dataset. It aligns products by stable `tree_id` and writes
-complete shards containing the required NAIP, LiDAR/structure, Sentinel-2,
-satellite-embedding, and PRISM inputs.
+## 3. Assemble the final shards
+
+Run a dry run first:
 
 ```powershell
 python dataCollectionPreprocessing/Shard/assemble_clean_tree_id_centered_model_input_shards.py `
-  --qa-root H:/TreeCenteredModelInputs/tree_centered_crop_qa_clean `
-  --crop-root H:/TreeCenteredModelInputs/tree_centered_naip_crops_clean `
-  --structure-root H:/TreeCenteredModelInputs/tree_centered_chm_structure_clean `
-  --sentinel-phenology-root H:/TreeCenteredModelInputs/tree_centered_sentinel_phenology_clean `
-  --gee-root H:/TreeCenteredModelInputs/tree_centered_gee_inputs_clean `
-  --prism-daily-root H:/TreeCenteredModelInputs/tree_centered_prism_daily_clean `
-  --use-prism-daily-temperature `
+  --qa-root "$DATA_ROOT/tree_centered_crop_qa_clean" `
+  --crop-root "$DATA_ROOT/tree_centered_naip_crops_clean" `
+  --structure-root "$DATA_ROOT/tree_centered_chm_structure_clean" `
+  --sentinel-phenology-root "$DATA_ROOT/tree_centered_sentinel_phenology_clean" `
+  --original-raw-sentinel-timeseries-root "$DATA_ROOT/sentinel2_timeseries_original" `
+  --supplemental-raw-sentinel-timeseries-root "$DATA_ROOT/sentinel2_timeseries_supplemental" `
+  --gee-root "$DATA_ROOT/tree_centered_gee_inputs_clean" `
+  --prism-root "$DATA_ROOT/tree_centered_prism_normals_clean" `
+  --prism-daily-root "$DATA_ROOT/tree_centered_prism_daily_clean" `
+  --use-prism-daily `
   --prism-daily-sentinel-end-date 20231231 `
   --no-require-prism-normals `
-  --output-root H:/TreeCenteredModelInputs/tree_centered_complete_sharded100k_prism_daily3_clean `
+  --output-root "$DATA_ROOT/tree_centered_complete_sharded100k_prism_daily3_clean" `
   --shard-size 100000 `
+  --max-sentinel-sequence-length 80 `
   --dry-run
 ```
 
-Run with `--dry-run` first, inspect the discovered products and exclusion
-counts, then remove the flag to write shards. The assembler writes a manifest
-and summary alongside each city's NPZ shard files.
+Inspect the discovered products and exclusion counts, then remove `--dry-run`
+to write the shards. `--use-prism-daily-temperature` remains accepted as a
+backward-compatible alias for `--use-prism-daily`; the branch contains daily
+precipitation, mean temperature, and maximum vapor-pressure deficit.
 
-`run_assemble_clean_prism_daily_temperature_shards.cmd` is the saved Windows
-runner for the current daily-temperature PRISM configuration. Extra command-line
-arguments are forwarded to the assembler.
+The assembler writes uncompressed NPZ files by default, paired row metadata,
+and generated summaries beside the data. Manifest paths are relative to the
+shard root. Do not separate a manifest from the shards it describes.
 
-The current shards contain daily precipitation, mean temperature, and maximum
-VPD aligned to the Sentinel sequence. They do not require or include the older
-PRISM climate-normal sidecars.
+## Frozen study provenance
 
-Use the clean assembler's dry run and generated per-city summaries to verify
-product alignment before training.
+Tracked, path-neutral study records are under [`provenance/`](provenance/):
 
-## Generated artifacts
+- final configuration and thresholds;
+- inventory and duplicate-coordinate summary;
+- QA exclusion summary;
+- final city/shard manifest;
+- NPZ member schema and expected dtypes.
 
-Manifests are generated outputs rather than repository configuration files.
-Keep them beside the shards they describe. Outputs include:
+Generated CSV and JSON files outside `provenance/` are intentionally ignored.
 
-- `*_tree_id_centered_complete_shards_manifest.csv`
-- per-city assembly summary JSON files
+## Optional compact distribution
 
-Do not move a generated manifest away from its shards; training and audit tools
-use the manifest paths and shard-relative filenames to preserve row identity.
-
-## Create compact shards for sharing
-
-To build a smaller, directly trainable distribution without modifying the
-canonical shards:
+`create_shareable_compact_shards.py` creates a smaller distribution without
+modifying the canonical shards:
 
 ```powershell
 python dataCollectionPreprocessing/Shard/create_shareable_compact_shards.py `
-  --input-root H:/TreeCenteredModelInputs/tree_centered_complete_sharded100k_prism_daily3_clean `
-  --output-root H:/ShareShards
+  --input-root "$DATA_ROOT/tree_centered_complete_sharded100k_prism_daily3_clean" `
+  --output-root "$DATA_ROOT/shareable_compact_shards"
 ```
 
-The compact format stores 30x30 center NAIP crops, centimetre-scaled `uint16`
-CHM arrays, `float16` continuous features, and boolean masks. It omits the
-unused vegetation-CHM weight and duplicate standalone daily-PRISM arrays. The
-active model loader reads the CHM scale metadata automatically.
-
-Run a city first with `--city-token denver` and inspect
-`compact_shard_conversion_report.json`. For one upload archive per city, add
-`--archive-cities`; this requires the `zstandard` package.
+This optional step crops NAIP to 30×30 pixels, encodes CHM at centimetre
+resolution in `uint16`, converts selected continuous arrays to `float16`, and
+adds format-version metadata. It is a distribution transformation, not the
+canonical study shard-assembly step.

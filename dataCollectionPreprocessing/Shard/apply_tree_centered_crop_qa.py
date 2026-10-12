@@ -20,15 +20,6 @@ import numpy as np
 import pandas as pd
 
 
-CLEAN_ROOT = Path(r"H:\TreeCenteredModelInputs")
-DEFAULT_CROP_ROOT = CLEAN_ROOT / "tree_centered_naip_crops_clean"
-DEFAULT_STRUCTURE_DIR = CLEAN_ROOT / "tree_centered_chm_structure_clean"
-DEFAULT_LIDAR_CHM_ROOT = CLEAN_ROOT / "tree_centered_lidar_products_clean" / "CHM"
-DEFAULT_SENTINEL_PHENOLOGY_DIR = CLEAN_ROOT / "tree_centered_sentinel_phenology_clean"
-DEFAULT_GEE_DIR = CLEAN_ROOT / "tree_centered_gee_inputs_clean"
-DEFAULT_OUTPUT_DIR = CLEAN_ROOT / "tree_centered_crop_qa_clean"
-
-
 STALE_CELL_CENTERED_QA_COLUMNS = {
     "screen_fail_center_naip_vegetation",
     "screen_fail_naip_saturation",
@@ -41,13 +32,13 @@ STALE_CELL_CENTERED_QA_COLUMNS = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--crop-root", type=Path, default=DEFAULT_CROP_ROOT)
-    parser.add_argument("--structure-dir", type=Path, default=DEFAULT_STRUCTURE_DIR)
-    parser.add_argument("--lidar-chm-root", type=Path, default=DEFAULT_LIDAR_CHM_ROOT)
+    parser.add_argument("--crop-root", type=Path, required=True)
+    parser.add_argument("--structure-dir", type=Path, required=True)
+    parser.add_argument("--lidar-chm-root", type=Path, required=True)
     parser.add_argument(
         "--sentinel-phenology-dir",
         type=Path,
-        default=DEFAULT_SENTINEL_PHENOLOGY_DIR,
+        required=True,
         help=(
             "Sentinel phenology sidecar root. Rows with missing_sentinel_phenology "
             "are hard-excluded from model use."
@@ -56,13 +47,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gee-dir",
         type=Path,
-        default=DEFAULT_GEE_DIR,
+        required=True,
         help=(
             "Clean GEE/Satlas embedding sidecar root. Rows with missing_satellite_embedding "
             "are hard-excluded from model use."
         ),
     )
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--city-token", action="append", default=None)
     parser.add_argument("--exclude-city-token", action="append", default=[])
     parser.add_argument("--metadata-pattern", default="*_tree_id_centered_nearest_64px_metadata.csv")
@@ -120,27 +111,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
-
-
-def reject_non_clean_roots(args: argparse.Namespace) -> None:
-    checked = {
-        "crop_root": args.crop_root,
-        "structure_dir": args.structure_dir,
-        "lidar_chm_root": args.lidar_chm_root,
-        "output_dir": args.output_dir,
-    }
-    if args.sentinel_phenology_dir is not None:
-        checked["sentinel_phenology_dir"] = args.sentinel_phenology_dir
-    if args.gee_dir is not None:
-        checked["gee_dir"] = args.gee_dir
-    clean_root_text = str(CLEAN_ROOT).lower()
-    for label, path in checked.items():
-        resolved_text = str(Path(path).resolve()).lower()
-        if not resolved_text.startswith(clean_root_text):
-            raise SystemExit(
-                f"{label} must point inside the standalone clean tree-centered root "
-                f"({CLEAN_ROOT}); got {path}"
-            )
 
 
 def find_sentinel_phenology_path(args: argparse.Namespace, city: str) -> Path | None:
@@ -537,9 +507,11 @@ def process_city(
     out["qa_flag_missing_gee_embedding"] = missing_gee_embedding
     for column, values in duplicate_metrics.items():
         out[column] = values
-    out["qa_lidar_chm_source"] = chm_source
-    out["qa_sentinel_phenology_source"] = sentinel_phenology_source
-    out["qa_gee_embedding_source"] = gee_source
+    # Store portable product identifiers rather than workstation-specific
+    # absolute paths in the row metadata propagated into final shards.
+    out["qa_lidar_chm_source"] = Path(chm_source).name if chm_source else ""
+    out["qa_sentinel_phenology_source"] = Path(sentinel_phenology_source).name if sentinel_phenology_source else ""
+    out["qa_gee_embedding_source"] = Path(gee_source).name if gee_source else ""
     out["qa_lidar_chm_pixels"] = int(chm.shape[1])
     hard_exclude = (
         low_center_vegetation
@@ -581,9 +553,9 @@ def process_city(
         "missing_gee_embedding": int(missing_gee_embedding.sum()),
         "mean_center_veg_fraction": float(np.mean(center_veg_fraction)),
         "mean_lidar_coverage": float(np.mean(center_lidar_coverage)),
-        "lidar_chm_source": chm_source,
-        "sentinel_phenology_source": sentinel_phenology_source,
-        "gee_embedding_source": gee_source,
+        "lidar_chm_source": Path(chm_source).name if chm_source else "",
+        "sentinel_phenology_source": Path(sentinel_phenology_source).name if sentinel_phenology_source else "",
+        "gee_embedding_source": Path(gee_source).name if gee_source else "",
         "lidar_chm_pixels": int(chm.shape[1]),
     }
     print(
@@ -620,7 +592,6 @@ def merge_city_rows(
 
 def main() -> int:
     args = parse_args()
-    reject_non_clean_roots(args)
     cities = discover_cities(args)
     if not cities:
         raise SystemExit("No complete city crop/structure products found.")

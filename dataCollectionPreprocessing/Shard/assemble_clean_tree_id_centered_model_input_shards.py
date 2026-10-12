@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Assemble clean tree_id-centered model input shards.
 
-This is the clean-dataset shard boundary. It reads only the standalone
-``H:\\TreeCenteredModelInputs`` products, aligns every modality by ``tree_id``,
+This is the clean-dataset shard boundary. It reads independently prepared
+modality products, aligns every modality by ``tree_id``,
 screens to rows with all required inputs, and writes complete physical shards
 that can be consumed by the tree-centered training scripts.
 """
@@ -30,43 +30,31 @@ from sentinel_schema import (  # noqa: E402
 )
 
 
-CLEAN_ROOT = Path(r"H:\TreeCenteredModelInputs")
-DEFAULT_QA_ROOT = CLEAN_ROOT / "tree_centered_crop_qa_clean"
-DEFAULT_CROP_ROOT = CLEAN_ROOT / "tree_centered_naip_crops_clean"
-DEFAULT_STRUCTURE_ROOT = CLEAN_ROOT / "tree_centered_chm_structure_clean"
-DEFAULT_SENTINEL_ROOT = CLEAN_ROOT / "tree_centered_sentinel_phenology_clean"
-DEFAULT_GEE_ROOT = CLEAN_ROOT / "tree_centered_gee_inputs_clean"
-DEFAULT_PRISM_ROOT = CLEAN_ROOT / "tree_centered_prism_normals_clean"
-DEFAULT_PRISM_DAILY_ROOT = CLEAN_ROOT / "tree_centered_prism_daily_clean"
-DEFAULT_OUTPUT_ROOT = CLEAN_ROOT / "tree_centered_complete_sharded100k_clean"
-DEFAULT_ORIGINAL_RAW_SENTINEL_ROOT = Path(r"E:\cell\sentinel2_timeseries")
-DEFAULT_SUPPLEMENTAL_RAW_SENTINEL_ROOT = Path(
-    r"E:\TreeCenteredModelInputs\tree_centered_sentinel_timeseries_supplemental"
-)
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--qa-root", type=Path, default=DEFAULT_QA_ROOT)
-    parser.add_argument("--crop-root", type=Path, default=DEFAULT_CROP_ROOT)
-    parser.add_argument("--structure-root", type=Path, default=DEFAULT_STRUCTURE_ROOT)
-    parser.add_argument("--sentinel-phenology-root", type=Path, default=DEFAULT_SENTINEL_ROOT)
-    parser.add_argument("--original-raw-sentinel-timeseries-root", type=Path, default=DEFAULT_ORIGINAL_RAW_SENTINEL_ROOT)
+    parser.add_argument("--qa-root", type=Path, required=True)
+    parser.add_argument("--crop-root", type=Path, required=True)
+    parser.add_argument("--structure-root", type=Path, required=True)
+    parser.add_argument("--sentinel-phenology-root", type=Path, required=True)
+    parser.add_argument("--original-raw-sentinel-timeseries-root", type=Path, required=True)
     parser.add_argument(
         "--supplemental-raw-sentinel-timeseries-root",
         type=Path,
-        default=DEFAULT_SUPPLEMENTAL_RAW_SENTINEL_ROOT,
+        required=True,
     )
-    parser.add_argument("--gee-root", type=Path, default=DEFAULT_GEE_ROOT)
-    parser.add_argument("--prism-root", type=Path, default=DEFAULT_PRISM_ROOT)
-    parser.add_argument("--prism-daily-root", type=Path, default=DEFAULT_PRISM_DAILY_ROOT)
+    parser.add_argument("--gee-root", type=Path, required=True)
+    parser.add_argument("--prism-root", type=Path, required=True)
+    parser.add_argument("--prism-daily-root", type=Path, required=True)
     parser.add_argument(
+        "--use-prism-daily",
         "--use-prism-daily-temperature",
+        dest="use_prism_daily",
         action=argparse.BooleanOptionalAction,
         default=False,
         help=(
             "Join daily PRISM ppt, tmean, and vpdmax to each raw Sentinel "
             "timestep by tree_id and exact date, then append all three values "
-            "to sentinel_sequence. The option name is retained for compatibility."
+            "to sentinel_sequence. The longer option is a compatibility alias."
         ),
     )
     parser.add_argument(
@@ -79,7 +67,7 @@ def parse_args() -> argparse.Namespace:
             "is evaluated."
         ),
     )
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument(
         "--city-token",
         action="append",
@@ -116,26 +104,6 @@ def parse_args() -> argparse.Namespace:
 
 def normalize_token(value: object) -> str:
     return "".join(ch for ch in str(value or "").strip().lower() if ch.isalnum())
-
-
-def require_clean_roots(args: argparse.Namespace) -> None:
-    clean_root = str(CLEAN_ROOT).lower()
-    for name in (
-        "qa_root",
-        "crop_root",
-        "structure_root",
-        "sentinel_phenology_root",
-        "gee_root",
-        "prism_root",
-        "output_root",
-    ):
-        path = Path(getattr(args, name)).resolve()
-        if not str(path).lower().startswith(clean_root):
-            raise SystemExit(f"{name} must point inside {CLEAN_ROOT}; got {path}")
-    if args.use_prism_daily_temperature:
-        path = Path(args.prism_daily_root).resolve()
-        if not str(path).lower().startswith(clean_root):
-            raise SystemExit(f"prism_daily_root must point inside {CLEAN_ROOT}; got {path}")
 
 
 def coord_key(lat: np.ndarray | pd.Series, lon: np.ndarray | pd.Series, decimals: int) -> np.ndarray:
@@ -607,7 +575,7 @@ def screen_rows(
     if args.require_raw_sentinel:
         reasons["missing_raw_sentinel"] = ~raw_sentinel_valid
         reasons["nonfinite_raw_sentinel"] = ~finite_rows(np.asarray(raw_sentinel["sentinel_sequence"], dtype=np.float32))
-    if args.use_prism_daily_temperature:
+    if args.use_prism_daily:
         reasons["missing_prism_daily"] = np.asarray(
             raw_sentinel.get("missing_prism_daily", np.ones(count, dtype=bool)),
             dtype=bool,
@@ -660,7 +628,7 @@ def process_city(city: str, args: argparse.Namespace) -> list[dict[str, Any]]:
     gee_pos = align_positions(metadata, gee, f"{city} gee")
     prism_pos = align_positions(metadata, prism, f"{city} prism") if prism is not None else None
     raw_sentinel, raw_sentinel_valid = load_raw_sentinel_sequences(city, metadata, sentinel, sentinel_pos, args)
-    if args.use_prism_daily_temperature:
+    if args.use_prism_daily:
         append_prism_daily_temperature(city, metadata, raw_sentinel, args)
     keep, reason_counts = screen_rows(
         metadata,
@@ -758,7 +726,7 @@ def process_city(city: str, args: argparse.Namespace) -> list[dict[str, Any]]:
             "source_sentinel_row": sentinel_idx.astype(np.int64),
             "source_gee_row": gee_idx.astype(np.int64),
         }
-        if args.use_prism_daily_temperature:
+        if args.use_prism_daily:
             arrays.update(
                 {
                     "sentinel_prism_daily": np.asarray(
@@ -799,8 +767,8 @@ def process_city(city: str, args: argparse.Namespace) -> list[dict[str, Any]]:
                 "city_token": city,
                 "source_key": source_key,
                 "rows": int(len(shard_meta)),
-                "input_path": str(input_path),
-                "metadata_path": str(metadata_path),
+                "input_path": input_path.relative_to(args.output_root).as_posix(),
+                "metadata_path": metadata_path.relative_to(args.output_root).as_posix(),
             }
         )
         action = "would write" if args.dry_run else "wrote"
@@ -810,7 +778,6 @@ def process_city(city: str, args: argparse.Namespace) -> list[dict[str, Any]]:
 
 def main() -> int:
     args = parse_args()
-    require_clean_roots(args)
     cities = discover_cities(args)
     if not cities:
         raise SystemExit(f"No clean QA city files found under {args.qa_root}")

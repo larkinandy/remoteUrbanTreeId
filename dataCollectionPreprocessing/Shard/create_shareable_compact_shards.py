@@ -21,9 +21,6 @@ from typing import Any
 import numpy as np
 
 
-DEFAULT_INPUT_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_centered_complete_sharded100k_prism_daily3_clean")
-DEFAULT_OUTPUT_ROOT = Path(r"H:\ShareShards")
-
 DROP_ARRAYS = {
     "tree_centered_vegetation_chm_weight",
     # These values are already appended to sentinel_sequence by the current
@@ -57,8 +54,8 @@ CHM_ARRAYS = {"tree_centered_chm", "tree_centered_vegetation_chm"}
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input-root", type=Path, default=DEFAULT_INPUT_ROOT)
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--input-root", type=Path, required=True)
+    parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--input-pattern", default="*/*_tree_centered_complete_inputs.npz")
     parser.add_argument("--naip-crop-pixels", type=int, default=30)
     parser.add_argument("--chm-scale-metres", type=float, default=0.01, help="uint16 CHM resolution; 0.01 means centimetres.")
