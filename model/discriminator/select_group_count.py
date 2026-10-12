@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select the initial group count using validation embeddings only.
+"""Exploratory validation-only comparison of initial candidate group counts.
 
 The discriminator embeds every tree on the unit hypersphere. This script
 computes one normalized centroid per fine taxon, clusters those centroids with
@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from discriminator_utils import prepare_output_directory, sha256, write_json
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,12 +46,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def normalize_rows(values: np.ndarray) -> np.ndarray:
+    """Normalize embedding or prototype rows for cosine comparisons."""
     values = np.asarray(values, dtype=np.float32)
     norms = np.linalg.norm(values, axis=1, keepdims=True)
     return np.divide(values, norms, out=np.zeros_like(values), where=norms > 1.0e-12)
 
 
 def load_embeddings(path: Path) -> dict[str, np.ndarray]:
+    """Load and validate a discriminator validation-embedding archive."""
     if not path.exists():
         raise FileNotFoundError(path)
     with np.load(path, allow_pickle=False) as data:
@@ -278,13 +281,11 @@ def main() -> int:
         raise SystemExit("Require 2 <= --min-groups <= --max-groups.")
     validation_path = args.validation_embeddings
     output_dir = args.output_dir
-    if output_dir.exists() and any(output_dir.iterdir()) and not args.overwrite:
-        raise SystemExit(f"Output directory is not empty (use --overwrite): {output_dir}")
+    output_dir = prepare_output_directory(output_dir, args.overwrite)
     validation = load_embeddings(validation_path)
     kept_indices, centroids, validation_counts = taxon_centroids(validation, args.min_class_validation_samples)
     weights = validation_counts[kept_indices].astype(np.float64) ** float(args.weight_power)
     labels = validation["label_columns"]
-    output_dir.mkdir(parents=True, exist_ok=True)
     summary_rows: list[dict[str, Any]] = []
 
     for groups in range(args.min_groups, args.max_groups + 1):
@@ -337,6 +338,7 @@ def main() -> int:
     best = summary_rows[0]
     summary = {
         "validation_embeddings": str(validation_path),
+        "validation_embeddings_sha256": sha256(validation_path),
         "label_count": int(len(kept_indices)),
         "objective": "separability",
         "best_group_count": int(best["group_count"]),
@@ -345,7 +347,7 @@ def main() -> int:
         "test_data_used_for_group_selection": False,
         "note": "All selection metrics use validation embeddings only. Independent test evaluation is a separate workflow.",
     }
-    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    write_json(output_dir / "summary.json", summary)
     print(f"Best separability: k={int(best['group_count'])}; objective={float(best['objective']):.10f}", flush=True)
     return 0
 

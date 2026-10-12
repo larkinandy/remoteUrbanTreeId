@@ -5,6 +5,30 @@ remote-sensing-derived taxon groups. Group construction uses validation data
 only. Independent test embeddings are evaluated only after every mapping has
 been frozen.
 
+## Script roles
+
+| Script | Role | Status |
+| --- | --- | --- |
+| `train_taxon_discriminator.py` | Fit the multimodal discriminator and export validation embeddings | Final training |
+| `select_group_count.py` | Compare initial candidate values of k without test data | Exploratory validation |
+| `bootstrap_fixed_k_consensus.py` | Freeze core assignments at a preselected k | Final group construction |
+| `select_collapsed_group_count.py` | Apply the prespecified stopping rule to nested candidates | Final validation |
+| `export_rare_taxon_embeddings.py` | Embed taxa with 50–499 records using the frozen encoder | Final inference |
+| `extend_partition_with_rare_taxa.py` | Assign rare taxa from development-only centroids | Final group construction |
+| `evaluate_independent_test.py` | Evaluate mappings after all decisions are frozen | Independent evaluation |
+
+`script_manifest.csv` provides the same classification in machine-readable
+form. Exploratory results are not independent evidence, and independent test
+results must not be used to revise group definitions.
+
+## Output locations
+
+Generated embeddings, checkpoints, bootstrap matrices, predictions, and result
+tables are kept outside this tracked source directory. The scripts reject
+output paths inside `model/discriminator`. Use `$DATA_ROOT` or an ignored
+analysis-output directory. Only compact frozen mappings and their checksums
+belong under `config/`.
+
 ## Reproducible order of operations
 
 1. **Train the discriminator.** Use the frozen architecture and optimization
@@ -55,3 +79,13 @@ The authoritative mappings and their hashes are documented by
 `config/final_grouping.json`, `config/artifact_manifest.csv`, and
 `config/validate_config.py`. Group identifiers are zero-based in NPZ arrays and
 one-based in manuscript displays.
+
+## Reproducibility safeguards
+
+- Selection scripts accept validation embeddings only.
+- NPZ schemas and taxon ordering are checked before calculations.
+- Rare assignments use development records only.
+- Independent evaluation audits validation/test record-key overlap.
+- JSON audits record hashes and whether test data were loaded.
+- Seeds and final architecture settings are frozen in
+  `final_discriminator_config.json`.

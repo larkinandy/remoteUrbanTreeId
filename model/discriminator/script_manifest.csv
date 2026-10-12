@@ -1,0 +1,8 @@
+script,role,status,uses_validation,uses_test,primary_output
+train_taxon_discriminator.py,model training,final training,yes,no,checkpoint and validation embeddings
+select_group_count.py,initial candidate-k comparison,exploratory validation,yes,no,candidate partitions and validation metrics
+bootstrap_fixed_k_consensus.py,fixed-k assignment consensus,final group construction,yes,no,core consensus partition
+select_collapsed_group_count.py,nested candidate stopping rule,final validation,yes,no,collapsed group-count scores
+export_rare_taxon_embeddings.py,frozen-encoder rare-taxon inference,final inference,no,no,development and held-out rare embeddings
+extend_partition_with_rare_taxa.py,development-only rare-taxon assignment,final group construction,yes,no,expanded k11 partition
+evaluate_independent_test.py,frozen-partition performance,independent evaluation,yes,yes,test metrics and overlap audit

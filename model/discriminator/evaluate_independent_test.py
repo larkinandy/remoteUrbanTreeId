@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Evaluate frozen discriminator groupings on independent test embeddings."""
+"""Independent-evaluation tool for frozen discriminator groupings.
+
+This script is deliberately downstream of all group selection and rare-taxon
+assignment. It reports test performance but cannot alter the frozen mappings.
+"""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_recall_fscore_support
+
+from discriminator_utils import prepare_output_directory, require_arrays, sha256, write_json
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,6 +53,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         required=True,
     )
+    p.add_argument("--overwrite", action="store_true", help="Allow reuse of a non-empty output directory.")
     return p.parse_args()
 
 
@@ -56,15 +62,8 @@ def normalize_rows(x: np.ndarray) -> np.ndarray:
     return x / np.maximum(np.linalg.norm(x, axis=1, keepdims=True), 1e-12)
 
 
-def sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            h.update(block)
-    return h.hexdigest()
-
-
 def keys(z: np.lib.npyio.NpzFile) -> np.ndarray:
+    """Build stable record keys used to audit validation/test disjointness."""
     return np.asarray(
         [f"{c}|{int(t)}|{int(i)}" for c, t, i in zip(z["city_token"], z["tree_id"], z["crop_index"])],
         dtype=str,
@@ -128,9 +127,12 @@ def nearest_prototype(embeddings: np.ndarray, prototypes: np.ndarray) -> np.ndar
 
 def main() -> None:
     args = parse_args()
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = prepare_output_directory(args.output_dir, args.overwrite)
 
     with np.load(args.validation_embeddings, allow_pickle=False) as val, np.load(args.test_embeddings, allow_pickle=False) as test:
+        required = {"embeddings", "labels", "label_columns", "city_token", "tree_id", "crop_index"}
+        require_arrays(val.files, required, args.validation_embeddings)
+        require_arrays(test.files, required, args.test_embeddings)
         val_labels = np.asarray(val["label_columns"], dtype=str)
         test_labels = np.asarray(test["label_columns"], dtype=str)
         if not np.array_equal(val_labels, test_labels):
@@ -181,11 +183,11 @@ def main() -> None:
         cm = confusion_matrix(y, pred, labels=np.arange(groups))
         pd.DataFrame(cm, index=np.arange(1, groups + 1), columns=np.arange(1, groups + 1)).rename_axis(
             "true_group"
-        ).to_csv(args.output_dir / f"confusion_{label_space}_{method}.csv")
+        ).to_csv(output_dir / f"confusion_{label_space}_{method}.csv")
 
     summary = pd.DataFrame(summary_rows)
-    summary.to_csv(args.output_dir / "independent_test_summary.csv", index=False)
-    pd.concat(per_group, ignore_index=True).to_csv(args.output_dir / "independent_test_per_group_metrics.csv", index=False)
+    summary.to_csv(output_dir / "independent_test_summary.csv", index=False)
+    pd.concat(per_group, ignore_index=True).to_csv(output_dir / "independent_test_per_group_metrics.csv", index=False)
 
     records = pd.DataFrame(
         {
@@ -201,7 +203,7 @@ def main() -> None:
             "predicted_k6_hierarchical": pred_k6_hierarchical + 1,
         }
     )
-    records.to_csv(args.output_dir / "independent_test_predictions.csv.gz", index=False, compression="gzip")
+    records.to_csv(output_dir / "independent_test_predictions.csv.gz", index=False, compression="gzip")
 
     overlap = np.intersect1d(val_keys, test_keys)
     audit = {
@@ -223,9 +225,9 @@ def main() -> None:
             "collapse": sha256(args.collapse),
         },
     }
-    (args.output_dir / "independent_test_audit.json").write_text(json.dumps(audit, indent=2), encoding="utf-8")
+    write_json(output_dir / "independent_test_audit.json", audit)
     np.savez_compressed(
-        args.output_dir / "frozen_grouping_materials.npz",
+        output_dir / "frozen_grouping_materials.npz",
         k11_to_k6=k11_to_k6,
         taxon_assignment_k11=assignment_k11,
         taxon_assignment_k6=assignment_k6,

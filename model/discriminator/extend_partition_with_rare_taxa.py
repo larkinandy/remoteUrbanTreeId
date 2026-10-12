@@ -1,29 +1,20 @@
 #!/usr/bin/env python3
-"""Extend a frozen core-taxon partition using development-only rare centroids."""
+"""Final tool for extending frozen groups to taxa with 50–499 records.
+
+Only development embeddings contribute to rare-taxon centroids. Held-out rare
+records are retained solely for independent evaluation.
+"""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-
-def normalize_rows(values: np.ndarray) -> np.ndarray:
-    values = np.asarray(values, dtype=np.float32)
-    norms = np.linalg.norm(values, axis=1, keepdims=True)
-    return np.divide(values, norms, out=np.zeros_like(values), where=norms > 1e-12)
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+from discriminator_utils import normalize_rows, prepare_output_directory, require_arrays, sha256, write_json
 
 
 def main() -> None:
@@ -36,31 +27,30 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
-    out = args.output_dir.resolve()
-    if out.exists() and any(out.iterdir()) and not args.overwrite:
-        raise SystemExit(f"Output directory is not empty: {out}")
-    out.mkdir(parents=True, exist_ok=True)
+    out = prepare_output_directory(args.output_dir, args.overwrite)
 
     with np.load(args.validation_embeddings, allow_pickle=False) as data:
+        required = {"embeddings", "label_columns"}
+        require_arrays(data.files, required, args.validation_embeddings)
         embeddings = normalize_rows(data["embeddings"])
         labels = np.asarray(data["labels" if "labels" in data.files else "label_index"], dtype=int)
         core_taxa = data["label_columns"].astype(str)
     with np.load(args.core_partition, allow_pickle=False) as data:
+        require_arrays(data.files, {"label_columns", "assignments"}, args.core_partition)
         partition_taxa = data["label_columns"].astype(str)
         core_assignment = np.asarray(data["assignments"], dtype=int)
     if not np.array_equal(core_taxa, partition_taxa):
         raise RuntimeError("Core partition taxa do not match validation embedding taxa and order")
     group_count = int(core_assignment.max()) + 1
     core_counts = np.bincount(labels, minlength=len(core_taxa)).astype(int)
-    core_centroids = normalize_rows(np.stack([
-        embeddings[labels == index].mean(axis=0) for index in range(len(core_taxa))
-    ]))
     with np.load(args.core_prototypes, allow_pickle=False) as data:
+        require_arrays(data.files, {"group_centroids", "assignments"}, args.core_prototypes)
         prototypes = normalize_rows(np.asarray(data["group_centroids"], dtype=np.float32))
         if not np.array_equal(np.asarray(data["assignments"], dtype=int), core_assignment):
             raise RuntimeError("Core prototype assignments differ from the frozen core partition")
 
     with np.load(args.rare_embeddings, allow_pickle=False) as data:
+        require_arrays(data.files, {"embeddings", "taxon", "rare_split"}, args.rare_embeddings)
         rare_embeddings = normalize_rows(data["embeddings"])
         rare_taxon_per_record = data["taxon"].astype(str)
         rare_split = data["rare_split"].astype(str)
@@ -87,10 +77,14 @@ def main() -> None:
     extended_assignment = np.concatenate([core_assignment, rare_assignment])
     output_path = out / "final_k11_partition.npz"
     np.savez_compressed(
-        output_path, assignments=extended_assignment, label_columns=extended_taxa,
+        output_path,
+        assignments=extended_assignment,
+        label_columns=extended_taxa,
         group_centroids=prototypes,
-        core_validation_counts=core_counts, rare_development_counts=development_counts,
-        rare_test_counts=test_counts, core_taxon_count=np.asarray([len(core_taxa)]),
+        core_validation_counts=core_counts,
+        rare_development_counts=development_counts,
+        rare_test_counts=test_counts,
+        core_taxon_count=np.asarray([len(core_taxa)]),
         rare_extension_taxon_count=np.asarray([len(rare_taxa)]),
     )
     pd.DataFrame({
@@ -102,13 +96,25 @@ def main() -> None:
         "held_out_test_records": test_counts,
     }).to_csv(out / "rare_taxon_group_assignments.csv", index=False)
     summary = pd.DataFrame({"assigned_group": np.arange(1, group_count + 1)})
-    rare_frame = pd.DataFrame({"group": rare_assignment + 1, "development": development_counts,
-                               "test": test_counts, "margin": margin})
-    grouped = rare_frame.groupby("group").agg(rare_taxa=("group", "size"),
-                                               development_records=("development", "sum"),
-                                               held_out_test_records=("test", "sum"),
-                                               median_assignment_margin=("margin", "median"),
-                                               minimum_assignment_margin=("margin", "min")).reset_index()
+    rare_frame = pd.DataFrame(
+        {
+            "group": rare_assignment + 1,
+            "development": development_counts,
+            "test": test_counts,
+            "margin": margin,
+        }
+    )
+    grouped = (
+        rare_frame.groupby("group")
+        .agg(
+            rare_taxa=("group", "size"),
+            development_records=("development", "sum"),
+            held_out_test_records=("test", "sum"),
+            median_assignment_margin=("margin", "median"),
+            minimum_assignment_margin=("margin", "min"),
+        )
+        .reset_index()
+    )
     summary.merge(grouped, left_on="assigned_group", right_on="group", how="left").drop(columns="group").to_csv(
         out / "rare_assignment_group_summary.csv", index=False)
     audit = {
@@ -125,7 +131,7 @@ def main() -> None:
         "rare_embeddings_sha256": sha256(args.rare_embeddings),
         "output_partition": str(output_path),
     }
-    (out / "assignment_audit.json").write_text(json.dumps(audit, indent=2) + "\n", encoding="utf-8")
+    write_json(out / "assignment_audit.json", audit)
     print(json.dumps(audit, indent=2), flush=True)
 
 

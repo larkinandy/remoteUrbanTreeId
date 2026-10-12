@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Fixed-k bootstrap consensus after k is selected from full validation centroids."""
+"""Final validation-only tool for freezing a fixed-k consensus partition.
+
+The group count must already be selected. Within-taxon resampling propagates
+uncertainty in validation centroids without loading test records.
+"""
 import argparse
 import json
 import time
@@ -13,20 +17,24 @@ from scipy.spatial.distance import squareform
 from sklearn.cluster import KMeans
 from sklearn.metrics import adjusted_rand_score
 
-
-def norm(x):
-    x = np.asarray(x, dtype=np.float32)
-    n = np.linalg.norm(x, axis=1, keepdims=True)
-    return np.divide(x, n, out=np.zeros_like(x), where=n > 1e-12)
+from discriminator_utils import normalize_rows, prepare_output_directory, require_arrays, sha256, write_json
 
 
-def fit(centroids, weights, groups, seed):
-    return KMeans(n_clusters=groups, init="k-means++", n_init=200, max_iter=200,
-                  random_state=seed, algorithm="lloyd").fit_predict(
-                      centroids, sample_weight=weights).astype(int)
+def fit(centroids: np.ndarray, weights: np.ndarray, groups: int, seed: int) -> np.ndarray:
+    """Fit one weighted K-means realization."""
+    model = KMeans(
+        n_clusters=groups,
+        init="k-means++",
+        n_init=200,
+        max_iter=200,
+        random_state=seed,
+        algorithm="lloyd",
+    )
+    return model.fit_predict(centroids, sample_weight=weights).astype(int)
 
 
-def align(reference, observed, groups):
+def align(reference: np.ndarray, observed: np.ndarray, groups: int) -> tuple[np.ndarray, np.ndarray]:
+    """Align arbitrary cluster identifiers to a reference partition."""
     table = np.zeros((groups, groups), dtype=int)
     np.add.at(table, (reference, observed), 1)
     rows, cols = linear_sum_assignment(-table)
@@ -34,7 +42,7 @@ def align(reference, observed, groups):
     return np.asarray([mapping[int(value)] for value in observed]), table
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--validation", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -46,14 +54,12 @@ def main():
     args = parser.parse_args()
     if args.groups < 2:
         raise SystemExit("--groups must be at least 2")
-    out = args.output_dir.resolve()
-    out.mkdir(parents=True, exist_ok=True)
-    if any(out.iterdir()) and not args.overwrite:
-        raise SystemExit(f"Refusing to overwrite nonempty directory without --overwrite: {out}")
+    out = prepare_output_directory(args.output_dir, args.overwrite)
 
     started = time.perf_counter()
     with np.load(args.validation, allow_pickle=False) as data:
-        embeddings = norm(data["embeddings"])
+        require_arrays(data.files, {"embeddings", "labels", "label_columns"}, args.validation)
+        embeddings = normalize_rows(data["embeddings"])
         labels = data["labels"].astype(int)
         taxa = data["label_columns"].astype(str)
     indices = [np.flatnonzero(labels == index) for index in range(len(taxa))]
@@ -61,13 +67,13 @@ def main():
     if (counts == 0).any():
         raise RuntimeError("Every taxon must have validation support")
     weights = np.sqrt(counts)
-    full_centroids = norm(np.stack([embeddings[index].mean(0) for index in indices]))
+    full_centroids = normalize_rows(np.stack([embeddings[index].mean(0) for index in indices]))
     reference = fit(full_centroids, weights, args.groups, args.seed)
 
     rng = np.random.default_rng(args.seed)
     assignments, aligned_assignments, stability_rows = [], [], []
     for replicate in range(1, args.replicates + 1):
-        boot_centroids = norm(np.stack([
+        boot_centroids = normalize_rows(np.stack([
             embeddings[index[rng.integers(0, len(index), len(index))]].mean(0)
             for index in indices
         ]))
@@ -129,18 +135,20 @@ def main():
         "taxa_retention_below_0_8": int(np.sum(retention < .8)),
         "elapsed_seconds": time.perf_counter() - started,
         "test_data_loaded": False,
+        "validation_embeddings_sha256": sha256(args.validation),
     }
-    (out / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    (out / "method.json").write_text(json.dumps({
+    write_json(out / "summary.json", summary)
+    write_json(out / "method.json", {
         "k_selection": "fixed before bootstrap from the complete-validation taxon-centroid objective",
         "bootstrap": "within-taxon n-out-of-n resampling of validation records",
         "clustering": f"weighted KMeans fixed k={args.groups}; weights=sqrt(validation support); n_init=200; max_iter=200; seed={args.seed}",
         "coassignment": f"fraction of fixed-k={args.groups} bootstrap replicates co-clustered",
         "consensus": f"{args.groups}-cluster average-linkage cut of 1 - coassignment",
         "test_data_loaded": False,
-    }, indent=2), encoding="utf-8")
+    })
     print(json.dumps(summary, indent=2), flush=True)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

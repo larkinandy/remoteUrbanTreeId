@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the prespecified stopping rule to nested variance-aware partitions.
+"""Final validation-only selector for nested collapsed-group candidates.
 
 The input table must contain validation-only diagnostics for consecutive values
 of k. This script never reads record-level test data. It reports the selected k
@@ -14,6 +14,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from discriminator_utils import prepare_output_directory, sha256, write_json
 
 REQUIRED_COLUMNS = {
     "k", "accuracy", "macro_f1", "minimum_group_f1",
@@ -48,8 +50,7 @@ def first_failed_split(frame: pd.DataFrame, score_column: str) -> int:
 
 def main() -> int:
     args = parse_args()
-    if args.output_dir.exists() and any(args.output_dir.iterdir()) and not args.overwrite:
-        raise SystemExit(f"Output directory is not empty; pass --overwrite: {args.output_dir}")
+    output_dir = prepare_output_directory(args.output_dir, args.overwrite)
     frame = pd.read_csv(args.candidate_metrics)
     missing = sorted(REQUIRED_COLUMNS.difference(frame.columns))
     if missing:
@@ -78,16 +79,16 @@ def main() -> int:
             + value * np.log(frame["separation"].to_numpy()[1:] / frame["separation"].to_numpy()[:-1])
         )
         selections[f"lambda_{value:g}"] = first_failed_split(frame, column)
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    frame.to_csv(args.output_dir / "collapsed_group_count_scores.csv", index=False)
+    frame.to_csv(output_dir / "collapsed_group_count_scores.csv", index=False)
     summary = {
         "test_data_used": False,
         "selection_rule": "start at minimum_k and stop at first J_k(lambda) <= 0",
         "maximum_record_share": args.maximum_record_share,
         "maximum_taxon_share": args.maximum_taxon_share,
         "selected_k": selections,
+        "candidate_metrics_sha256": sha256(args.candidate_metrics),
     }
-    (args.output_dir / "collapsed_group_count_selection.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    write_json(output_dir / "collapsed_group_count_selection.json", summary)
     print(json.dumps(summary, indent=2))
     return 0
 
