@@ -1,0 +1,6 @@
+file,bytes,sha256,description
+one_city_analysis_metadata.json,691,20b88436dd6cfa433a9834c57b007f1a25be8607230c62c6796fb24de3c68521,Frozen one-city analysis settings and reporting rules
+one_city_comparability_audit.csv,507,c62a5086baeb567f7d66e146afc74d7aa41a986f333942c8f0c6576952d18a5e,Exact record and label checks for all seven source models
+one_city_overall_collapsed_k6_summary.csv,678,e1128a45117e2d11394b861c385f9bc69afdc47913db8bce1191cf568bf62747,Final source-balanced one-city and primary-model comparison
+qa_screened_eligible_cities.csv,368,5ba17612f8599f8a77114576e9db05396cd305184cb477e897193186bcb526fe,Cities retaining at least 1000 independent test records after QA screening
+source_city_taxon_support.csv,672,680c0d830b0b444ac68f4447bc29dab81f61746d5fe492e8cf0901721bb5e68f,Training taxon support for the seven one-city source models

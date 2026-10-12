@@ -1,0 +1,8 @@
+source_city,expected_records,prediction_records,joined_records,target_city_set_exact,records_per_city_exact,k11_labels_exact,collapsed_k6_labels_exact
+denver,155097,155097,155097,True,True,True,True
+portland,155097,155097,155097,True,True,True,True
+ranchocucamonga,155097,155097,155097,True,True,True,True
+sanfrancisco,155097,155097,155097,True,True,True,True
+sanjose,155097,155097,155097,True,True,True,True
+seattle,155097,155097,155097,True,True,True,True
+stlouis,155097,155097,155097,True,True,True,True

@@ -1,0 +1,8 @@
+source_city,training_records,mapped_taxa_total,taxa_present,taxa_absent,taxa_present_percent,taxa_with_lt10_records,taxa_with_10_to_49_records,taxa_with_ge50_records,median_records_per_present_taxon,minimum_records_per_present_taxon
+denver,167500,579,254,325,43.86873920552677,57,62,135,70.0,1
+portland,119057,579,112,467,19.34369602763385,8,17,87,248.5,2
+ranchocucamonga,38337,579,146,433,25.215889464594128,50,39,57,26.0,1
+sanfrancisco,51815,579,255,324,44.04145077720207,82,78,95,26.0,1
+sanjose,157495,579,301,278,51.98618307426595,84,67,150,49.0,1
+seattle,68086,579,286,293,49.39550949913644,47,88,151,56.5,1
+stlouis,38810,579,177,402,30.5699481865285,82,42,53,11.0,1

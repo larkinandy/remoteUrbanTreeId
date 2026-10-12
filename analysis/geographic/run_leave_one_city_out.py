@@ -7,9 +7,9 @@ For each focal city, the inherited stage-two split is used as follows:
 * validation: inherited validation records from every other city;
 * test: inherited test records from the focal city only.
 
-The finalized pruned k=11 architecture is trained from scratch. Its five best
+The finalized pruned k11 architecture is trained from scratch. Its five best
 validation checkpoints are ensembled, then probabilities are summed into the
-fixed six reporting groups. Runs are sequential to preserve RAM and GPU
+fixed collapsed_k6 reporting groups. Runs are sequential to preserve RAM and GPU
 throughput. Final city and pooled summaries are written after all requested
 cities finish.
 """
@@ -25,38 +25,40 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from geographic_utils import (
+    collapse_map_string,
+    eligible_city_support,
+    load_predictions,
+    load_qa_flags,
+    metric_set,
+    screen_qa,
+    validate_split_manifest,
+)
+
 
 ROOT = Path(__file__).resolve().parents[2]
 TRAINER = ROOT / "model" / "stage2" / "train_fixed_partition_classifier.py"
 EVALUATOR = ROOT / "model" / "stage2" / "evaluate_checkpoint_ensemble.py"
-DEFAULT_SHARDS = Path(r"H:\TreeCenteredModelInputs\tree_centered_complete_sharded100k_prism_daily3_clean")
-DEFAULT_MMAP = Path(r"H:\TreeCenteredModelInputs\tree_centered_prepared_float32_v1")
-DEFAULT_MODEL_OUTPUT = Path(
-    r"H:\TreeCenteredModelInputs\collapsed_group_models_clean\reviewer_revision\k11_loco_pruned_v1"
-)
 DEFAULT_RESULT_OUTPUT = ROOT / "outputs" / "reviewer_revision" / "k11_loco_pruned_v1"
 DEFAULT_PARTITION = ROOT / "config" / "final_k11_partition.npz"
-DEFAULT_SPLITS = (
-    ROOT / "outputs" / "reviewer_revision" / "stage2_partitions_k11_groupnorm_v1"
-    / "reviewer_stage2_loader_manifest.csv.gz"
-)
-DEFAULT_REFERENCE_PREDICTIONS = (
-    ROOT / "outputs" / "reviewer_revision" / "final_pruned_k11_test_top5_ensemble"
-    / "ensemble_predictions.npz"
-)
-COLLAPSE_MAP = "1,1,2,2,3,3,4,5,3,6,2"
+DEFAULT_GROUPING = ROOT / "config" / "final_grouping.json"
+DEFAULT_GEOGRAPHIC_CONFIG = ROOT / "analysis" / "geographic" / "geographic_config.json"
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument("--complete-shard-root", type=Path, default=DEFAULT_SHARDS)
-    p.add_argument("--prepared-mmap-root", type=Path, default=DEFAULT_MMAP)
+    p.add_argument("--complete-shard-root", type=Path, required=True)
+    p.add_argument("--prepared-mmap-root", type=Path, required=True)
     p.add_argument("--species-partition", type=Path, default=DEFAULT_PARTITION)
-    p.add_argument("--split-manifest", type=Path, default=DEFAULT_SPLITS)
-    p.add_argument("--reference-test-predictions", type=Path, default=DEFAULT_REFERENCE_PREDICTIONS)
-    p.add_argument("--model-output-dir", type=Path, default=DEFAULT_MODEL_OUTPUT)
+    p.add_argument("--grouping-config", type=Path, default=DEFAULT_GROUPING)
+    p.add_argument("--geographic-config", type=Path, default=DEFAULT_GEOGRAPHIC_CONFIG)
+    p.add_argument("--split-manifest", type=Path, required=True)
+    p.add_argument("--reference-test-predictions", type=Path, required=True)
+    p.add_argument("--qa-metadata", type=Path, required=True)
+    p.add_argument("--model-output-dir", type=Path, required=True)
     p.add_argument("--result-output-dir", type=Path, default=DEFAULT_RESULT_OUTPUT)
     p.add_argument("--minimum-test-records", type=int, default=1000)
+    p.add_argument("--minimum-group-records", type=int, default=10)
     p.add_argument("--city", action="append", default=None, help="Run only this eligible city; repeat as needed.")
     p.add_argument("--start-at", default=None, help="Skip eligible cities alphabetically before this city.")
     p.add_argument("--epochs", type=int, default=120)
@@ -71,13 +73,6 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--force", action="store_true", help="Allow trainer/evaluator reuse of nonempty output directories.")
     return p.parse_args()
-
-
-def eligible_cities(path: Path, minimum: int) -> pd.DataFrame:
-    with np.load(path, allow_pickle=True) as pred:
-        cities = pd.Series(pred["city_token"].astype(str), name="city")
-    counts = cities.value_counts().rename_axis("city").reset_index(name="test_records")
-    return counts.loc[counts.test_records.ge(minimum)].sort_values("city").reset_index(drop=True)
 
 
 def run_streamed(command: list[str], log_path: Path, cwd: Path) -> None:
@@ -97,33 +92,13 @@ def run_streamed(command: list[str], log_path: Path, cwd: Path) -> None:
         raise subprocess.CalledProcessError(code, command)
 
 
-def metric_set(labels: np.ndarray, predictions: np.ndarray, class_count: int) -> tuple[dict, list[dict], np.ndarray]:
-    cm = np.bincount(labels * class_count + predictions, minlength=class_count**2).reshape(class_count, class_count)
-    support = cm.sum(axis=1)
-    predicted = cm.sum(axis=0)
-    tp = np.diag(cm)
-    precision = np.divide(tp, predicted, out=np.zeros(class_count, dtype=float), where=predicted > 0)
-    recall = np.divide(tp, support, out=np.zeros(class_count, dtype=float), where=support > 0)
-    f1 = np.divide(2 * precision * recall, precision + recall, out=np.zeros(class_count), where=(precision + recall) > 0)
-    represented = support > 0
-    overall = {
-        "records": int(support.sum()),
-        "represented_groups": int(represented.sum()),
-        "accuracy": float(tp.sum() / support.sum()),
-        "macro_f1": float(f1[represented].mean()),
-        "weighted_f1": float(np.average(f1[represented], weights=support[represented])),
-    }
-    per_group = [
-        {
-            "group": index + 1, "support": int(support[index]), "predicted": int(predicted[index]),
-            "precision": float(precision[index]), "recall": float(recall[index]), "f1": float(f1[index]),
-        }
-        for index in range(class_count)
-    ]
-    return overall, per_group, cm
-
-
-def aggregate(result_root: Path, cities: list[str]) -> None:
+def aggregate(
+    result_root: Path,
+    cities: list[str],
+    qa_path: Path,
+    minimum_group_records: int,
+    collapse_map: str,
+) -> None:
     city_rows, group_rows = [], []
     native_labels, native_predictions, collapsed_labels, collapsed_predictions = [], [], [], []
     completed = []
@@ -132,12 +107,21 @@ def aggregate(result_root: Path, cities: list[str]) -> None:
         pred_path = run_dir / "ensemble_predictions.npz"
         if not pred_path.exists():
             continue
-        with np.load(pred_path, allow_pickle=True) as pred:
-            y11, p11 = pred["labels"].astype(np.int64), pred["predictions"].astype(np.int64)
-            y6, p6 = pred["collapsed_labels"].astype(np.int64), pred["collapsed_predictions"].astype(np.int64)
-        m11, _, _ = metric_set(y11, p11, 11)
-        m6, pg6, _ = metric_set(y6, p6, 6)
-        city_rows.append({"city": city, **{f"k11_{k}": v for k, v in m11.items()}, **{f"k6_{k}": v for k, v in m6.items()}})
+        predictions = load_predictions(pred_path, "loco")
+        screened = screen_qa(
+            predictions.merge(load_qa_flags(qa_path), on="record_key", validate="one_to_one")
+        )
+        y11 = screened["k11_label_loco"].to_numpy()
+        p11 = screened["k11_prediction_loco"].to_numpy()
+        y6 = screened["collapsed_k6_label_loco"].to_numpy()
+        p6 = screened["collapsed_k6_prediction_loco"].to_numpy()
+        m11, _, _ = metric_set(y11, p11, 11, minimum_group_records)
+        m6, pg6, _ = metric_set(y6, p6, 6, minimum_group_records)
+        city_rows.append({
+            "city": city,
+            **{f"k11_{key}": value for key, value in m11.items()},
+            **{f"collapsed_k6_{key}": value for key, value in m6.items()},
+        })
         group_rows.extend({"city": city, **row} for row in pg6)
         native_labels.append(y11); native_predictions.append(p11)
         collapsed_labels.append(y6); collapsed_predictions.append(p6)
@@ -146,17 +130,24 @@ def aggregate(result_root: Path, cities: list[str]) -> None:
         return
     city_frame = pd.DataFrame(city_rows).sort_values("city")
     city_frame.to_csv(result_root / "loco_city_summary.csv", index=False)
-    pd.DataFrame(group_rows).to_csv(result_root / "loco_city_k6_per_group_metrics.csv", index=False)
+    pd.DataFrame(group_rows).to_csv(result_root / "loco_city_collapsed_k6_per_group_metrics.csv", index=False)
     y11, p11 = np.concatenate(native_labels), np.concatenate(native_predictions)
     y6, p6 = np.concatenate(collapsed_labels), np.concatenate(collapsed_predictions)
-    m11, pg11, cm11 = metric_set(y11, p11, 11)
-    m6, pg6, cm6 = metric_set(y6, p6, 6)
-    pooled = {"completed_cities": completed, "k11": m11, "collapsed_k6": m6, "collapse_map": COLLAPSE_MAP}
+    m11, pg11, cm11 = metric_set(y11, p11, 11, minimum_group_records)
+    m6, pg6, cm6 = metric_set(y6, p6, 6, minimum_group_records)
+    pooled = {
+        "completed_cities": completed,
+        "qa_screen": "excluded qa_flag_low_vegetated_height_with_lidar records",
+        "minimum_group_records_for_macro_f1": minimum_group_records,
+        "k11": m11,
+        "collapsed_k6": m6,
+        "collapse_map": collapse_map,
+    }
     (result_root / "loco_pooled_summary.json").write_text(json.dumps(pooled, indent=2), encoding="utf-8")
     pd.DataFrame(pg11).to_csv(result_root / "loco_pooled_k11_per_group_metrics.csv", index=False)
-    pd.DataFrame(pg6).to_csv(result_root / "loco_pooled_k6_per_group_metrics.csv", index=False)
+    pd.DataFrame(pg6).to_csv(result_root / "loco_pooled_collapsed_k6_per_group_metrics.csv", index=False)
     pd.DataFrame(cm11).to_csv(result_root / "loco_pooled_k11_confusion_counts.csv", index=False)
-    pd.DataFrame(cm6).to_csv(result_root / "loco_pooled_k6_confusion_counts.csv", index=False)
+    pd.DataFrame(cm6).to_csv(result_root / "loco_pooled_collapsed_k6_confusion_counts.csv", index=False)
 
 
 def training_command(a: argparse.Namespace, city: str, run_name: str) -> list[str]:
@@ -201,6 +192,7 @@ def training_command(a: argparse.Namespace, city: str, run_name: str) -> list[st
 
 
 def evaluation_command(a: argparse.Namespace, city: str, model_run: Path) -> list[str]:
+    collapse_map = collapse_map_string(a.grouping_config)
     cmd = [
         sys.executable, str(EVALUATOR), "--model-run-dir", str(model_run), "--top-k", "5",
         "--complete-shard-root", str(a.complete_shard_root),
@@ -209,7 +201,7 @@ def evaluation_command(a: argparse.Namespace, city: str, model_run: Path) -> lis
         "--run-name", f"loco_{city}_test_top5_ensemble", "--grouping-scheme", "species_partition",
         "--species-partition", str(a.species_partition), "--city-token", city, "--split", "test",
         "--batch-size", str(a.batch_size), "--num-workers", "2", "--max-shard-cache", str(a.max_shard_cache),
-        "--collapse-map", COLLAPSE_MAP, "--device", a.device, "--export-predictions",
+        "--collapse-map", collapse_map, "--device", a.device, "--export-predictions",
     ]
     if a.force:
         cmd.append("--force")
@@ -218,11 +210,19 @@ def evaluation_command(a: argparse.Namespace, city: str, model_run: Path) -> lis
 
 def main() -> int:
     a = parse_args()
-    required = [TRAINER, EVALUATOR, a.complete_shard_root, a.prepared_mmap_root, a.species_partition, a.split_manifest, a.reference_test_predictions]
+    required = [
+        TRAINER, EVALUATOR, a.complete_shard_root, a.prepared_mmap_root,
+        a.species_partition, a.grouping_config, a.geographic_config, a.split_manifest,
+        a.reference_test_predictions, a.qa_metadata,
+    ]
     for path in required:
         if not path.exists():
             raise FileNotFoundError(path)
-    eligible = eligible_cities(a.reference_test_predictions, a.minimum_test_records)
+    validate_split_manifest(a.split_manifest, a.geographic_config)
+    eligible = eligible_city_support(
+        a.reference_test_predictions, a.qa_metadata, a.minimum_test_records
+    )
+    all_eligible_cities = eligible.city.tolist()
     if a.city:
         requested = {value.strip().lower() for value in a.city}
         unknown = sorted(requested.difference(set(eligible.city)))
@@ -263,9 +263,15 @@ def main() -> int:
         else:
             print(f"Training already complete; proceeding to ensemble: {model_run}", flush=True)
         run_streamed(eval_cmd, a.result_output_dir / "logs" / f"{city}_ensemble.log", ROOT)
-        aggregate(a.result_output_dir, cities)
+        aggregate(
+            a.result_output_dir, all_eligible_cities, a.qa_metadata,
+            a.minimum_group_records, collapse_map_string(a.grouping_config),
+        )
     if not a.dry_run:
-        aggregate(a.result_output_dir, cities)
+        aggregate(
+            a.result_output_dir, all_eligible_cities, a.qa_metadata,
+            a.minimum_group_records, collapse_map_string(a.grouping_config),
+        )
     return 0
 
 

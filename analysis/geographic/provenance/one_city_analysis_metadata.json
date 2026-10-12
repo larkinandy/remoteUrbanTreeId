@@ -1,0 +1,19 @@
+{
+  "source_cities": [
+    "denver",
+    "portland",
+    "ranchocucamonga",
+    "sanfrancisco",
+    "sanjose",
+    "seattle",
+    "stlouis"
+  ],
+  "target_city_count": 22,
+  "cross_city_targets_per_source": 21,
+  "minimum_qa_screened_test_records_per_city": 1000,
+  "qa_screen": "excluded qa_flag_low_vegetated_height_with_lidar records",
+  "macro_f1_rule": "calculated over target-city groups with at least 10 screened test records",
+  "primary_summary": "source-balanced: target cities averaged within source, then source models averaged equally",
+  "comparability_checks_passed": true,
+  "note": "Atlanta was excluded because fewer than 1,000 test records remained after QA screening."
+}
