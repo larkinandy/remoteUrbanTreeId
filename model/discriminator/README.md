@@ -50,7 +50,7 @@ belong under `config/`.
    `select_group_count.py` compares validation-centroid partitions and cannot
    accept test embeddings.
 
-3. **Freeze the k = 11 core-taxon assignments.** Run
+3. **Freeze the `k11` core-taxon assignments.** Run
    `bootstrap_fixed_k_consensus.py` with 500 within-taxon bootstrap replicates.
    The frozen manuscript artifact is `config/core_k11_partition.npz`.
 
@@ -58,14 +58,14 @@ belong under `config/`.
    candidates enforce maximum record and core-taxon shares of 0.5. Supply their
    validation-only diagnostics to `select_collapsed_group_count.py`, which
    applies the prespecified recoverability/separation stopping rule for
-   lambda = 0.5, 1, and 2. The final k11-to-collapsed-k6 mapping is frozen in
+   lambda = 0.5, 1, and 2. The final `k11`-to-`collapsed_k6` mapping is frozen in
    `config/final_k11_to_k6_collapse.npz`.
 
 5. **Embed and assign rare taxa.** `export_rare_taxon_embeddings.py` passes taxa
    with 50–499 records through the frozen discriminator and creates a
    deterministic within-taxon development/test split. Then
    `extend_partition_with_rare_taxa.py` constructs each rare-taxon centroid from
-   development records only and assigns it to the nearest frozen k = 11 group
+   development records only and assigns it to the nearest frozen `k11` group
    prototype. Its artifact follows the exact `config/final_k11_partition.npz`
    schema. No rare-taxon test record contributes to its assigned label.
 

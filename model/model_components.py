@@ -1,6 +1,28 @@
-"""Shared PyTorch runtime and neural-network components for active clean models."""
+"""Shared neural-network building blocks for the manuscript model pipeline.
+
+The discriminator and stage-two classifier import these encoders directly so
+their raster normalization, temporal masking, and vector encoding behavior do
+not diverge. PyTorch is optional at import time to allow lightweight CLI and
+documentation inspection; constructing a model still requires PyTorch.
+"""
 
 from __future__ import annotations
+
+from typing import Any, Callable
+
+__all__ = [
+    "DataLoader",
+    "Dataset",
+    "F",
+    "ImageEncoder",
+    "MaskedSequenceEncoder",
+    "PhenologyEncoder",
+    "TORCH_IMPORT_ERROR",
+    "Tensor",
+    "make_spatial_normalization",
+    "nn",
+    "torch",
+]
 
 try:
     import torch
@@ -14,29 +36,38 @@ except ModuleNotFoundError as exc:
     TORCH_IMPORT_ERROR = exc
 
     class _MissingCuda:
+        """Minimal CUDA namespace used when PyTorch is unavailable."""
+
         @staticmethod
         def is_available() -> bool:
+            """Report that CUDA cannot be used without PyTorch."""
             return False
 
     class _MissingTorch:
+        """Import-time placeholder for the small torch surface used by CLIs."""
+
         Tensor = object
         cuda = _MissingCuda()
 
         @staticmethod
-        def no_grad():
-            def decorator(function):
+        def no_grad() -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+            """Return an identity decorator for import-only code paths."""
+
+            def decorator(function: Callable[..., Any]) -> Callable[..., Any]:
                 return function
 
             return decorator
 
     class _MissingModule:
-        pass
+        """Placeholder base class that keeps module definitions importable."""
 
     class _MissingNN:
+        """Placeholder namespace exposing only ``Module``."""
+
         Module = _MissingModule
 
     class _MissingDataset:
-        pass
+        """Placeholder dataset base class for import-only code paths."""
 
     torch = _MissingTorch()
     nn = _MissingNN()
@@ -46,12 +77,42 @@ except ModuleNotFoundError as exc:
     Tensor = object
 
 
+def make_spatial_normalization(
+    channels: int,
+    normalization: str,
+    *,
+    max_groups: int = 8,
+) -> Any:
+    """Construct the requested 2-D normalization layer.
+
+    Group normalization uses the largest divisor of ``channels`` no greater
+    than ``max_groups``. This is the normalization used by the final NAIP, CHM,
+    and NAIP–CHM interaction encoders. Batch normalization remains available
+    for compatibility and controlled comparisons.
+    """
+    if TORCH_IMPORT_ERROR is not None:
+        raise RuntimeError("PyTorch is required to construct model layers") from TORCH_IMPORT_ERROR
+    if channels <= 0:
+        raise ValueError("channels must be positive")
+    if max_groups <= 0:
+        raise ValueError("max_groups must be positive")
+    if normalization == "batch":
+        return nn.BatchNorm2d(channels)
+    if normalization == "group":
+        groups = min(max_groups, channels)
+        while channels % groups:
+            groups -= 1
+        return nn.GroupNorm(groups, channels)
+    raise ValueError(f"Unknown image normalization: {normalization!r}")
+
+
 class ImageEncoder(nn.Module):
     """Encode a fixed-size raster modality.
 
-    Batch normalization remains the default for compatibility with existing
-    models. Group normalization is available for single-modality experiments
-    whose shard-local batches may not provide representative running moments.
+    The normalization is explicit because historical comparison models used
+    batch normalization, whereas the final manuscript raster encoders use
+    group normalization. The generic default remains ``batch`` for backward
+    compatibility; frozen final configurations always pass ``group``.
     """
 
     def __init__(
@@ -60,32 +121,20 @@ class ImageEncoder(nn.Module):
         hidden_dim: int,
         dropout: float,
         normalization: str = "batch",
-    ):
+    ) -> None:
         super().__init__()
-
-        def norm(channels: int) -> nn.Module:
-            if normalization == "batch":
-                return nn.BatchNorm2d(channels)
-            if normalization == "group":
-                # Prefer eight groups while also supporting nonstandard hidden
-                # dimensions supplied at runtime.
-                groups = min(8, channels)
-                while channels % groups:
-                    groups -= 1
-                return nn.GroupNorm(groups, channels)
-            raise ValueError(f"Unknown image normalization: {normalization!r}")
 
         self.net = nn.Sequential(
             nn.Conv2d(in_channels, 32, 3, padding=1),
-            norm(32),
+            make_spatial_normalization(32, normalization),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2),
             nn.Conv2d(32, 64, 3, padding=1),
-            norm(64),
+            make_spatial_normalization(64, normalization),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2),
             nn.Conv2d(64, hidden_dim, 3, padding=1),
-            norm(hidden_dim),
+            make_spatial_normalization(hidden_dim, normalization),
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
@@ -99,7 +148,7 @@ class ImageEncoder(nn.Module):
 class MaskedSequenceEncoder(nn.Module):
     """Encode and mask a variable-length environmental sequence."""
 
-    def __init__(self, input_dim: int, hidden_dim: int, dropout: float):
+    def __init__(self, input_dim: int, hidden_dim: int, dropout: float) -> None:
         super().__init__()
         self.input = nn.Linear(input_dim, hidden_dim)
         layer = nn.TransformerEncoderLayer(
@@ -128,7 +177,7 @@ class MaskedSequenceEncoder(nn.Module):
 class PhenologyEncoder(nn.Module):
     """Encode a fixed-length environmental feature vector."""
 
-    def __init__(self, input_dim: int, hidden_dim: int, dropout: float):
+    def __init__(self, input_dim: int, hidden_dim: int, dropout: float) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.LayerNorm(input_dim),

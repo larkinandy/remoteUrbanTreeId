@@ -3,8 +3,8 @@
 
 This script uses the clean standalone complete shards and maps each record's
 scientific label through a fixed species-level partition. The repository
-default is the frozen 11-group manuscript mapping including taxa with at least
-50 records. Reported six-group results are produced after checkpoint
+default is the frozen `k11` manuscript mapping including taxa with at least 50
+records. Reported `collapsed_k6` results are produced after checkpoint
 ensembling; they are not trained here as a separate label space.
 """
 
@@ -391,15 +391,8 @@ class LearnedCommonGridInteractionEncoder(clean_disc.train_base.nn.Module):
         branch_dim = 32
 
         def norm(channels: int) -> Any:
-            """Construct the requested spatial normalization layer."""
-            if normalization == "batch":
-                return clean_disc.train_base.nn.BatchNorm2d(channels)
-            if normalization == "group":
-                groups = min(8, channels)
-                while channels % groups:
-                    groups -= 1
-                return clean_disc.train_base.nn.GroupNorm(groups, channels)
-            raise ValueError(f"Unknown interaction normalization: {normalization!r}")
+            """Construct the shared spatial normalization layer."""
+            return clean_disc.train_base.make_spatial_normalization(channels, normalization)
 
         self.naip_to_common_grid = clean_disc.train_base.nn.Sequential(
             clean_disc.train_base.nn.Conv2d(
@@ -482,15 +475,8 @@ class SharedNaipCommonGridEncoder(clean_disc.train_base.nn.Module):
         branch_dim = 32
 
         def norm(channels: int) -> Any:
-            """Construct the requested spatial normalization layer."""
-            if normalization == "batch":
-                return clean_disc.train_base.nn.BatchNorm2d(channels)
-            if normalization == "group":
-                groups = min(8, channels)
-                while channels % groups:
-                    groups -= 1
-                return clean_disc.train_base.nn.GroupNorm(groups, channels)
-            raise ValueError(f"Unknown interaction normalization: {normalization!r}")
+            """Construct the shared spatial normalization layer."""
+            return clean_disc.train_base.make_spatial_normalization(channels, normalization)
 
         self.naip_to_common_grid = clean_disc.train_base.nn.Sequential(
             clean_disc.train_base.nn.Conv2d(

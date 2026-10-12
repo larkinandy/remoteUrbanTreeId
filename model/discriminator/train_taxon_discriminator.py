@@ -530,7 +530,7 @@ class CleanTreeDataset(train_base.Dataset):
         prism_std: np.ndarray | None,
         args: argparse.Namespace,
         preload_in_memory: bool = False,
-    ):
+    ) -> None:
         self.manifest = manifest.reset_index(drop=True)
         self.store = store
         self.structure_mean = np.asarray(structure_mean, dtype=np.float32)
@@ -765,15 +765,9 @@ class LearnedCommonGridInteractionEncoder(train_base.nn.Module):
         self.chm_patch_pixels = int(chm_patch_pixels)
         branch_dim = 32
 
-        def norm(channels: int):
-            if normalization == "batch":
-                return train_base.nn.BatchNorm2d(channels)
-            if normalization == "group":
-                groups = min(8, channels)
-                while channels % groups:
-                    groups -= 1
-                return train_base.nn.GroupNorm(groups, channels)
-            raise ValueError(f"Unknown interaction normalization: {normalization!r}")
+        def norm(channels: int) -> Any:
+            """Construct the shared spatial normalization layer."""
+            return train_base.make_spatial_normalization(channels, normalization)
 
         self.naip_to_common_grid = train_base.nn.Sequential(
             train_base.nn.Conv2d(5, branch_dim, kernel_size=self.naip_patch_pixels, stride=self.naip_patch_pixels),
