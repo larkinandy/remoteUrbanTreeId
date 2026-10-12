@@ -10,24 +10,16 @@ from pathlib import Path
 
 import numpy as np
 
+from figure_config import canonical_collapse_zero_based, colors
+
 
 # The k=11 palette is nested within the balanced k=6 collapse:
 # (1,2)->blue; (3,4,11)->orange; (5,6,9)->green; 7->vermillion;
 # 8->magenta; 10->purple. This makes the relationship between the two
 # reporting levels visually explicit while retaining distinguishable shades.
-K11_COLORS = [
-    "#005A8D", "#56B4E9",
-    "#A96500", "#E69F00",
-    "#006D50", "#009E73",
-    "#D55E00", "#CC79A7", "#66C2A5", "#332288", "#F2C14E",
-]
-K11_MANUSCRIPT_COLORS = [
-    "#005A8D", "#56B4E9",
-    "#A96500", "#E69F00", "#F2C14E",
-    "#006D50", "#009E73", "#66C2A5",
-    "#D55E00", "#CC79A7", "#332288",
-]
-K6_COLORS = ["#0072B2", "#E69F00", "#009E73", "#D55E00", "#CC79A7", "#332288"]
+K11_COLORS = colors("k11_analytical")
+K11_MANUSCRIPT_COLORS = colors("k11_manuscript")
+COLLAPSED_K6_COLORS = colors("collapsed_k6")
 # Manuscript examples selected to make four aspects of the partition visible:
 # one representative of every k=11 group; Acer spanning groups 3, 4, 6, and 7;
 # two difficult k=11 boundary taxa that improve after the k=6 collapse; and two
@@ -58,18 +50,13 @@ LABEL_OFFSETS = {
 def parse_args():
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--coordinates", type=Path, default=root / "outputs/reviewer_revision/revised_groupnorm_interaction_fixed_k11_consensus_b500/revised_k11_discrimination_space_coordinates.csv")
-    parser.add_argument("--partition", type=Path, default=root / "config/final_k11_partition.npz")
+    parser.add_argument("--coordinates", type=Path, default=root / "analysis/figures/provenance/core_taxon_umap_coordinates.csv")
+    parser.add_argument("--partition", type=Path, default=root / "config/core_k11_partition.npz")
     parser.add_argument("--output-dir", type=Path, default=root / "outputs/manuscript_figures")
     parser.add_argument("--output-name", default="k11_discrimination_space_manuscript.svg")
     parser.add_argument(
-        "--collapse-map",
-        default=None,
-        help=(
-            "Optional comma-separated one-based destination group for each original group. "
-            "For example, 1,1,2 maps original groups 1 and 2 to new group 1 and "
-            "original group 3 to new group 2."
-        ),
+        "--group-space", choices=("k11", "collapsed_k6"), default="k11",
+        help="Reporting label space; collapsed_k6 uses config/final_grouping.json.",
     )
     parser.add_argument("--title", default="Discriminator separation space and assigned groups")
     parser.add_argument(
@@ -88,13 +75,8 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--hybrid-collapse-map",
-        default=None,
-        help=(
-            "Optional comma-separated one-based k=6 destination for each displayed "
-            "k=11 group. When supplied, draw a boxed k=11-to-k=6 hierarchy legend "
-            "without changing the plotted k=11 assignments."
-        ),
+        "--hybrid-legend", action="store_true",
+        help="Draw the canonical k11-to-collapsed_k6 hierarchy without changing assignments.",
     )
     return parser.parse_args()
 
@@ -105,6 +87,10 @@ def pretty_taxon(value: str) -> str:
 
 def main():
     args = parse_args()
+    if args.group_space == "collapsed_k6" and args.group_order:
+        raise ValueError("--group-order is display-only for k11 and cannot be combined with collapsed_k6")
+    if args.group_space == "collapsed_k6" and args.hybrid_legend:
+        raise ValueError("--hybrid-legend requires the k11 group space")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     with args.coordinates.open(newline="", encoding="utf-8") as handle:
         coordinates = list(csv.DictReader(handle))
@@ -125,36 +111,34 @@ def main():
         group_relabel = np.empty(original_group_count, dtype=int)
         group_relabel[old_order] = np.arange(original_group_count, dtype=int)
         assignment = group_relabel[assignment]
-    if args.collapse_map:
-        collapse = np.asarray([int(value.strip()) - 1 for value in args.collapse_map.split(",")], dtype=int)
+    collapse = None
+    if args.group_space == "collapsed_k6":
+        collapse = canonical_collapse_zero_based()
         original_group_count = int(assignment.max()) + 1
         if len(collapse) != original_group_count:
             raise ValueError(
-                f"--collapse-map has {len(collapse)} entries but the partition has "
+                f"Canonical collapse has {len(collapse)} entries but the partition has "
                 f"{original_group_count} original groups"
             )
-        if collapse.min() < 0 or set(collapse.tolist()) != set(range(int(collapse.max()) + 1)):
-            raise ValueError("--collapse-map destinations must be contiguous one-based group numbers")
         assignment = collapse[assignment]
     lookup = {taxon: index for index, taxon in enumerate(taxa)}
     group_count = int(assignment.max()) + 1
     colors = (
-        K6_COLORS if args.collapse_map and group_count == 6
+        COLLAPSED_K6_COLORS if collapse is not None and group_count == 6
         else K11_MANUSCRIPT_COLORS if group_relabel is not None and group_count == 11
         else K11_COLORS
     )
     if group_count > len(colors):
         raise ValueError(f"Only {len(colors)} colors are configured for {group_count} groups")
     hybrid_collapse = None
-    if args.hybrid_collapse_map:
-        hybrid_collapse = np.asarray(
-            [int(value.strip()) - 1 for value in args.hybrid_collapse_map.split(",")],
-            dtype=int,
-        )
+    if args.hybrid_legend:
+        hybrid_collapse = canonical_collapse_zero_based()
+        if group_relabel is not None:
+            displayed = np.empty_like(hybrid_collapse)
+            displayed[group_relabel] = hybrid_collapse
+            hybrid_collapse = displayed
         if group_count != 11 or len(hybrid_collapse) != group_count:
-            raise ValueError("--hybrid-collapse-map requires one destination for each of 11 displayed groups")
-        if hybrid_collapse.min() < 0 or set(hybrid_collapse.tolist()) != set(range(6)):
-            raise ValueError("--hybrid-collapse-map destinations must be contiguous groups 1--6")
+            raise ValueError("--hybrid-legend requires the frozen 11-group partition")
     rows = []
     for row in coordinates:
         taxon = row["taxon"]
@@ -182,7 +166,7 @@ def main():
             core_count = int(np.asarray(expanded["core_taxon_count"]).reshape(-1)[0])
             rare_development_counts = expanded["rare_development_counts"].astype(int)
             rare_test_counts = expanded["rare_test_counts"].astype(int)
-        if args.collapse_map:
+        if collapse is not None:
             expanded_assignment = collapse[expanded_assignment]
         elif group_relabel is not None:
             expanded_assignment = group_relabel[expanded_assignment]
@@ -230,7 +214,7 @@ def main():
     svg = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1100" viewBox="0 0 1680 1100" role="img" aria-labelledby="title desc">',
         f'<title id="title">{html.escape(args.title)}</title>',
-        f'<desc id="desc">UMAP projection of 280 taxon centroids colored by {group_count} assigned groups.</desc>',
+        f'<desc id="desc">UMAP projection of {len(rows)} core-taxon centroids colored by {group_count} assigned groups.</desc>',
         '<rect width="1680" height="1100" fill="#ffffff"/>',
         '<defs><marker id="legend-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#7b8994"/></marker></defs>',
         f'<text x="70" y="58" fill="#1f2a36" font-family="Arial" font-size="38" font-weight="700">{html.escape(args.title)}</text>',
@@ -290,7 +274,7 @@ def main():
                 svg.append(f'<circle cx="{cx}" cy="{center_y}" r="12" fill="{colors[source_group]}" fill-opacity="0.88"/>')
                 svg.append(f'<text x="{cx}" y="{center_y+5}" text-anchor="middle" fill="#ffffff" font-family="Arial" font-size="12" font-weight="700" stroke="#27313a" stroke-width="0.7" paint-order="stroke">{source_group+1}</text>')
             svg.append(f'<line x1="1142" y1="{center_y}" x2="1180" y2="{center_y}" stroke="#7b8994" stroke-width="1.8" marker-end="url(#legend-arrow)"/>')
-            svg.append(f'<circle cx="1205" cy="{center_y}" r="14" fill="{K6_COLORS[collapsed_group]}" fill-opacity="0.88"/>')
+            svg.append(f'<circle cx="1205" cy="{center_y}" r="14" fill="{COLLAPSED_K6_COLORS[collapsed_group]}" fill-opacity="0.88"/>')
             svg.append(f'<text x="1205" y="{center_y+5}" text-anchor="middle" fill="#ffffff" font-family="Arial" font-size="13" font-weight="700" stroke="#27313a" stroke-width="0.7" paint-order="stroke">{collapsed_group+1}</text>')
             svg.append(f'<text x="1232" y="{center_y-3}" fill="#1f2a36" font-family="Arial" font-size="15" font-weight="700">{len(collapsed_members)} taxa</text>')
             svg.append(f'<text x="1232" y="{center_y+18}" fill="#5c6c7a" font-family="Arial" font-size="14">{record_percent:.1f}% of records</text>')

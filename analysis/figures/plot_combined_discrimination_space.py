@@ -12,17 +12,18 @@ import numpy as np
 
 from plot_discrimination_space import (
     K11_MANUSCRIPT_COLORS,
-    K6_COLORS,
+    COLLAPSED_K6_COLORS,
     LABELS,
     LABEL_OFFSETS,
     pretty_taxon,
 )
+from figure_config import manuscript_collapse_zero_based
 
 
 # This map is in the manuscript display order used by the input CSV, after the
 # internal k=11 identifiers have been reordered for a contiguous legend. The
 # model-space collapse remains the mapping in config/final_grouping.json.
-HYBRID_MAP = np.asarray([0, 0, 1, 1, 1, 2, 2, 2, 3, 4, 5], dtype=int)
+HYBRID_MAP = manuscript_collapse_zero_based()
 
 
 def parse_args():
@@ -31,12 +32,12 @@ def parse_args():
     parser.add_argument(
         "--k11-csv",
         type=Path,
-        default=root / "outputs/reviewer_revision/revised_groupnorm_interaction_fixed_k11_consensus_b500/manuscript_reordered_k11_discrimination_space_with_rare_taxa.csv",
+        default=root / "analysis/figures/provenance/manuscript_k11_discrimination_space.csv",
     )
     parser.add_argument(
-        "--k6-csv",
+        "--collapsed-k6-csv",
         type=Path,
-        default=root / "outputs/reviewer_revision/balanced_k6_from_k11_candidate/balanced_k6_discrimination_space_with_rare_taxa.csv",
+        default=root / "analysis/figures/provenance/manuscript_collapsed_k6_discrimination_space.csv",
     )
     parser.add_argument(
         "--output",
@@ -127,7 +128,7 @@ def draw_panel(svg, rows, colors, panel_x, title, panel_letter, bounds, maximum)
 def main():
     args = parse_args()
     k11_rows = read_rows(args.k11_csv)
-    k6_rows = read_rows(args.k6_csv)
+    collapsed_k6_rows = read_rows(args.collapsed_k6_csv)
     core = [row for row in k11_rows if row["taxon_type"] == "core"]
     xs = np.asarray([row["x"] for row in core])
     ys = np.asarray([row["y"] for row in core])
@@ -145,7 +146,7 @@ def main():
         '<text x="70" y="94" fill="#5c6c7a" font-family="Arial" font-size="19">Identical taxon-centroid coordinates are shown in both panels; colors indicate the assigned group at each reporting level.</text>',
     ]
     draw_panel(svg, k11_rows, K11_MANUSCRIPT_COLORS, 90.0, "Fine partition (k=11)", "A", bounds, maximum)
-    draw_panel(svg, k6_rows, K6_COLORS, 1110.0, "Collapsed partition (k=6)", "B", bounds, maximum)
+    draw_panel(svg, collapsed_k6_rows, COLLAPSED_K6_COLORS, 1110.0, "Collapsed partition (k=6)", "B", bounds, maximum)
 
     svg.append('<text x="90" y="1184" fill="#1f2a36" font-family="Arial" font-size="24" font-weight="700">Shared group hierarchy</text>')
     svg.append('<text x="375" y="1184" fill="#7b8994" font-family="Arial" font-size="15">k=11 groups</text>')
@@ -169,7 +170,7 @@ def main():
             svg.append(f'<text x="{cx}" y="{center_y+5}" text-anchor="middle" fill="#ffffff" font-family="Arial" font-size="12" font-weight="700" stroke="#27313a" stroke-width="0.7" paint-order="stroke">{source_group+1}</text>')
         arrow_x = left + 165
         svg.append(f'<line x1="{arrow_x}" y1="{center_y}" x2="{arrow_x+45}" y2="{center_y}" stroke="#7b8994" stroke-width="1.8" marker-end="url(#legend-arrow)"/>')
-        svg.append(f'<circle cx="{left+240}" cy="{center_y}" r="15" fill="{K6_COLORS[collapsed_group]}" fill-opacity="0.9"/>')
+        svg.append(f'<circle cx="{left+240}" cy="{center_y}" r="15" fill="{COLLAPSED_K6_COLORS[collapsed_group]}" fill-opacity="0.9"/>')
         svg.append(f'<text x="{left+240}" y="{center_y+5}" text-anchor="middle" fill="#ffffff" font-family="Arial" font-size="13" font-weight="700" stroke="#27313a" stroke-width="0.7" paint-order="stroke">{collapsed_group+1}</text>')
         svg.append(f'<text x="{left+272}" y="{center_y-4}" fill="#1f2a36" font-family="Arial" font-size="16" font-weight="700">{len(members)} taxa</text>')
         svg.append(f'<text x="{left+272}" y="{center_y+19}" fill="#5c6c7a" font-family="Arial" font-size="15">{record_percent:.1f}% of records</text>')

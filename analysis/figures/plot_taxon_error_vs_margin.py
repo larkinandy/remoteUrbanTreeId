@@ -1,6 +1,8 @@
-"""Plot taxon-level classification error against discriminator prototype margin.
+"""Prepare and plot taxon error against discriminator prototype margin.
 
-The defaults use the final pruned model's top-five test ensemble.
+The calculation uses the final pruned model's top-five independent-test
+ensemble, QA screening, frozen group assignments, and development-only rare
+centroids. Rendering is performed from the resulting taxon-level table.
 """
 
 from __future__ import annotations
@@ -10,35 +12,36 @@ import math
 from pathlib import Path
 
 import matplotlib
-matplotlib.__version__ = "3.x"
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
+from figure_config import (
+    analytical_to_manuscript_zero_based,
+    canonical_collapse_zero_based,
+    colors,
+)
+from figure_data import boolean_series, save_figure_formats
 
-COLORS = ["#0072B2", "#E69F00", "#009E73", "#D55E00", "#CC79A7", "#332288"]
-K11_TO_K6 = np.asarray([0, 0, 1, 1, 2, 2, 3, 4, 2, 5, 1], dtype=np.int64)
-# Analytical k=11 labels are reordered for manuscript display so groups that
-# collapse together are sequential and share related color families.
-K11_TO_MANUSCRIPT = np.asarray([0, 1, 2, 3, 5, 6, 8, 9, 7, 10, 4], dtype=np.int64)
-K11_MANUSCRIPT_COLORS = [
-    "#005A8D", "#56B4E9", "#A96500", "#E69F00", "#F2C14E",
-    "#006D50", "#009E73", "#66C2A5", "#D55E00", "#CC79A7", "#332288",
-]
+
+K11_TO_K6 = canonical_collapse_zero_based()
+K11_TO_MANUSCRIPT = analytical_to_manuscript_zero_based()
+COLLAPSED_K6_COLORS = colors("collapsed_k6")
+K11_MANUSCRIPT_COLORS = colors("k11_manuscript")
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--predictions", type=Path, default=Path("outputs/reviewer_revision/final_pruned_k11_test_top5_ensemble/ensemble_predictions.npz"))
-    p.add_argument("--core-partition", type=Path, default=Path("outputs/reviewer_revision/revised_groupnorm_interaction_fixed_k11_consensus_b500/fixed_k11_consensus_partition.npz"))
+    p.add_argument("--core-partition", type=Path, default=Path("config/core_k11_partition.npz"))
     p.add_argument("--expanded-partition", type=Path, default=Path("config/final_k11_partition.npz"))
     p.add_argument("--rare-embeddings", type=Path, default=Path("outputs/reviewer_revision/revised_groupnorm_interaction_k11_rare_extension/rare_taxon_embeddings.npz"))
-    p.add_argument("--shard-root", type=Path, default=Path(r"H:\TreeCenteredModelInputs\tree_centered_complete_sharded100k_prism_daily3_clean"))
+    p.add_argument("--shard-root", type=Path, required=True, help="Complete shard root, typically below $DATA_ROOT.")
     p.add_argument("--output-dir", type=Path, default=None)
     p.add_argument("--dataset-label", default="final pruned height-screened test ensemble")
-    p.add_argument("--group-space", choices=("k6", "k11"), default="k6")
+    p.add_argument("--group-space", choices=("collapsed_k6", "k11"), default="collapsed_k6")
     p.add_argument(
         "--exclude-height-warning",
         action=argparse.BooleanOptionalAction,
@@ -50,12 +53,6 @@ def parse_args() -> argparse.Namespace:
 
 def normalized_rows(x: np.ndarray) -> np.ndarray:
     return x / np.maximum(np.linalg.norm(x, axis=1, keepdims=True), 1e-12)
-
-
-def as_bool(series: pd.Series) -> pd.Series:
-    if series.dtype == bool:
-        return series.fillna(False)
-    return series.fillna(False).astype(str).str.strip().str.lower().isin({"1", "true", "t", "yes", "y"})
 
 
 def prediction_metadata(pred: np.lib.npyio.NpzFile, shard_root: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -91,24 +88,41 @@ def prediction_metadata(pred: np.lib.npyio.NpzFile, shard_root: Path) -> tuple[n
     species = tokens[1].fillna("").str.lower()
     plausible_species = species.ne("") & ~species.isin({"sp", "spp", "species", "hybrid", "unknown"})
     taxa = (genus + "_" + species).where(plausible_species, genus).to_numpy()
-    warning = as_bool(joined["qa_flag_low_vegetated_height_with_lidar"]).to_numpy(dtype=bool)
+    warning = boolean_series(joined["qa_flag_low_vegetated_height_with_lidar"]).to_numpy(dtype=bool)
     return taxa, warning
 
 
-def taxon_centroids(core_path: Path, expanded_path: Path, rare_path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    core = np.load(core_path, allow_pickle=True)
-    expanded = np.load(expanded_path, allow_pickle=True)
-    rare = np.load(rare_path, allow_pickle=True)
-    taxa = expanded["label_columns"].astype(str)
-    assignments = expanded["assignments"].astype(np.int64)
-    core_taxa = core["label_columns"].astype(str)
-    centroid_by_taxon = {t: v for t, v in zip(core_taxa, core["full_validation_centroids"].astype(np.float64))}
-    rare_frame = pd.DataFrame({"taxon": rare["taxon"].astype(str), "row": np.arange(len(rare["taxon"]))})
-    embeddings = rare["embeddings"].astype(np.float64)
-    for taxon, idx in rare_frame.groupby("taxon", sort=False).indices.items():
-        centroid_by_taxon[taxon] = embeddings[np.asarray(idx)].mean(axis=0)
-    centroids = np.stack([centroid_by_taxon[t] for t in taxa])
-    return taxa, assignments, centroids
+def taxon_centroids(
+    core_path: Path, expanded_path: Path, rare_path: Path
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """Build core centroids and development-only rare-extension centroids."""
+    with np.load(core_path, allow_pickle=True) as core, np.load(
+        expanded_path, allow_pickle=True
+    ) as expanded, np.load(rare_path, allow_pickle=True) as rare:
+        taxa = expanded["label_columns"].astype(str)
+        assignments = expanded["assignments"].astype(np.int64)
+        core_taxa = core["label_columns"].astype(str)
+        core_count = int(np.asarray(expanded["core_taxon_count"]).reshape(-1)[0])
+        if core_count != len(core_taxa) or not np.array_equal(taxa[:core_count], core_taxa):
+            raise ValueError("Expanded partition does not begin with the frozen core-taxon order")
+        centroid_by_taxon = {
+            taxon: centroid
+            for taxon, centroid in zip(core_taxa, core["full_validation_centroids"].astype(np.float64))
+        }
+        rare_taxa = rare["taxon"].astype(str)
+        rare_split = rare["rare_split"].astype(str)
+        rare_embeddings = rare["embeddings"].astype(np.float64)
+    development = rare_split == "development"
+    rare_frame = pd.DataFrame(
+        {"taxon": rare_taxa[development], "row": np.flatnonzero(development)}
+    )
+    for taxon, positions in rare_frame.groupby("taxon", sort=False).indices.items():
+        source_rows = rare_frame.iloc[np.asarray(positions)]["row"].to_numpy(dtype=np.int64)
+        centroid_by_taxon[taxon] = rare_embeddings[source_rows].mean(axis=0)
+    missing = [taxon for taxon in taxa if taxon not in centroid_by_taxon]
+    if missing:
+        raise ValueError(f"No development centroid available for {len(missing)} taxa")
+    return taxa, assignments, np.stack([centroid_by_taxon[taxon] for taxon in taxa]), core_count
 
 
 def main() -> None:
@@ -131,7 +145,7 @@ def main() -> None:
         f"2 m vegetation-height screen: retained={len(probabilities):,}/{all_test_records:,}; "
         f"excluded={all_test_records - len(probabilities):,}"
     )
-    if args.group_space == "k6":
+    if args.group_space == "collapsed_k6":
         model_probabilities = np.column_stack(
             [probabilities[:, K11_TO_K6 == g].sum(axis=1) for g in range(6)]
         )
@@ -139,11 +153,13 @@ def main() -> None:
         model_probabilities = probabilities
     predicted = model_probabilities.argmax(axis=1)
 
-    taxa, analytical_groups, centroids = taxon_centroids(args.core_partition, args.expanded_partition, args.rare_embeddings)
-    groups = K11_TO_K6[analytical_groups] if args.group_space == "k6" else analytical_groups
-    display_groups = groups if args.group_space == "k6" else K11_TO_MANUSCRIPT[groups]
-    group_count = 6 if args.group_space == "k6" else 11
-    colors = COLORS if args.group_space == "k6" else K11_MANUSCRIPT_COLORS
+    taxa, analytical_groups, centroids, core_count = taxon_centroids(
+        args.core_partition, args.expanded_partition, args.rare_embeddings
+    )
+    groups = K11_TO_K6[analytical_groups] if args.group_space == "collapsed_k6" else analytical_groups
+    display_groups = groups if args.group_space == "collapsed_k6" else K11_TO_MANUSCRIPT[groups]
+    group_count = 6 if args.group_space == "collapsed_k6" else 11
+    plot_colors = COLLAPSED_K6_COLORS if args.group_space == "collapsed_k6" else K11_MANUSCRIPT_COLORS
     taxon_to_group = dict(zip(taxa, groups))
     true_group = np.asarray([taxon_to_group[t] for t in taxa_for_rows], dtype=np.int64)
     rows = pd.DataFrame({"taxon": taxa_for_rows, "correct": predicted == true_group})
@@ -161,7 +177,9 @@ def main() -> None:
 
     out = pd.DataFrame({"taxon": taxa, "group": display_groups + 1, "prototype_margin": margin}).join(performance, on="taxon")
     out["misclassification_error"] = 1.0 - out.accuracy
-    out["frequency_category"] = np.where(np.arange(len(out)) < 280, "core", "rare extension")
+    out["frequency_category"] = np.where(
+        np.arange(len(out)) < core_count, "core", "rare extension"
+    )
     out = out.dropna(subset=["accuracy"]).sort_values(["group", "prototype_margin"])
     out.to_csv(args.output_dir / "taxon_error_vs_prototype_margin.csv", index=False)
     pd.DataFrame(
@@ -198,7 +216,7 @@ def main() -> None:
             gridsize=17, mincnt=1, cmap=density_cmap, linewidths=0, alpha=.45,
         )
         hexbins.append(hb)
-        for g, color in enumerate(colors, start=1):
+        for g, color in enumerate(plot_colors, start=1):
             d = subset[subset.group == g]
             ax.scatter(
                 d.prototype_margin, d.misclassification_error,
@@ -243,8 +261,7 @@ def main() -> None:
     cbar.set_label("Taxa per hexagon", fontsize=11, color="#607184")
     cbar.ax.tick_params(labelsize=10, colors="#607184")
     fig.tight_layout()
-    for suffix in ("png", "svg", "pdf"):
-        fig.savefig(args.output_dir / f"taxon_error_vs_prototype_margin.{suffix}", bbox_inches="tight", facecolor="white")
+    save_figure_formats(fig, args.output_dir / "taxon_error_vs_prototype_margin", dpi=600)
     plt.close(fig)
     print(f"Wrote {len(out):,} taxa; rho={rho:.4f}; p={pvalue:.3g}")
 

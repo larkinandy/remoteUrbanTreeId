@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot contextual deviations from overall mean modality-gate weights."""
+"""Render the standalone contextual modality-gate deviation panel."""
 
 from __future__ import annotations
 
@@ -10,10 +10,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from figure_data import load_gate_weight_tables, save_figure_formats
+
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_INPUT = ROOT / "outputs" / "reviewer_revision" / "final_gate_weight_stratified_analysis"
-DEFAULT_OUTPUT = DEFAULT_INPUT / "gate_weight_context_deviation"
+DEFAULT_INPUT = ROOT / "analysis" / "figures" / "provenance"
+DEFAULT_OUTPUT = ROOT / "outputs" / "reviewer_revision" / "gate_weight_context_deviation"
 MODALITIES = (
     "tree_centered_naip",
     "tree_centered_chm",
@@ -43,18 +45,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     a = parse_args()
-    overall = pd.read_csv(a.input_dir / "gate_weights_overall.csv").set_index("modality")["mean"]
-    city = pd.read_csv(a.input_dir / "gate_weights_by_city.csv")
-    height = pd.read_csv(a.input_dir / "gate_weights_by_height_class_qa_screened.csv")
-    provenance = pd.read_csv(a.input_dir / "gate_weights_by_taxon_provenance.csv")
-
-    city = city.loc[city["support"].ge(a.minimum_city_support)].copy()
-    city["deviation_pp"] = 100.0 * (city["mean"] - city["modality"].map(overall))
-    height = height.loc[height["height_class"].isin(["2–5 m", "5–10 m", ">=10 m"])].copy()
-    height["deviation_pp"] = 100.0 * (height["mean"] - height["modality"].map(overall))
-    provenance["deviation_pp"] = 100.0 * (provenance["mean"] - provenance["modality"].map(overall))
-
-    city_ranges = city.groupby("modality")["deviation_pp"].agg(["min", "max", "count"])
+    tables = load_gate_weight_tables(a.input_dir, a.minimum_city_support)
+    height, provenance, city_ranges = tables.height, tables.provenance, tables.city_ranges
     marker_specs = (
         (height, "height_class", "2–5 m", "^", "#111111", "2–5 m height", 0.16),
         (height, "height_class", "5–10 m", "s", "#4d4d4d", "5–10 m height", 0.08),
@@ -125,10 +117,7 @@ def main() -> int:
     )
     fig.subplots_adjust(left=0.27, right=0.98, top=0.88, bottom=0.29)
 
-    a.output_prefix.parent.mkdir(parents=True, exist_ok=True)
-    for extension in ("png", "pdf", "svg"):
-        path = a.output_prefix.with_suffix(f".{extension}")
-        fig.savefig(path, dpi=a.dpi if extension == "png" else None, bbox_inches="tight", facecolor="white")
+    for path in save_figure_formats(fig, a.output_prefix, a.dpi):
         print(path)
     plt.close(fig)
     return 0
