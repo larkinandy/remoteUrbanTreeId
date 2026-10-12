@@ -27,19 +27,26 @@ import csv
 import json
 import re
 import ssl
-import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Iterable
 
 
-HERE = Path(__file__).resolve().parent
-LIDAR_HELPER_DIR = HERE.parent / "LiDAR"
+from prism_common import (
+    cell_center_lonlat,
+    city_cell_tables,
+    normalize_city,
+    parse_flexible_date,
+    parse_number_list,
+    read_unique_cells,
+)
+
+
 DEFAULT_URL_TEMPLATES = {
     "daily": (
         "https://ftp.prism.oregonstate.edu/time_series/{region}/{time_series_kind}/{resolution}/{variable}/daily/{year}/"
@@ -140,10 +147,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def normalize_token(value: object) -> str:
-    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower().replace("alberquerque", "albuquerque"))
-
-
 def ssl_context(no_verify_tls: bool) -> ssl.SSLContext | None:
     if not no_verify_tls:
         return None
@@ -153,25 +156,12 @@ def ssl_context(no_verify_tls: bool) -> ssl.SSLContext | None:
     return context
 
 
-def load_city_helpers():
-    sys.path.insert(0, str(LIDAR_HELPER_DIR))
-    try:
-        from identify_tnm_lidar_city_coverage import cell_center_lonlat, city_cell_tables, read_unique_cells
-    finally:
-        try:
-            sys.path.remove(str(LIDAR_HELPER_DIR))
-        except ValueError:
-            pass
-    return cell_center_lonlat, city_cell_tables, read_unique_cells
-
-
 def iter_city_cells(args: argparse.Namespace) -> Iterable[tuple[str, list[dict]]]:
-    cell_center_lonlat, city_cell_tables, read_unique_cells = load_city_helpers()
-    wanted = {normalize_token(token) for token in args.city_token}
-    excluded = {normalize_token(token) for token in args.exclude_city_token}
+    wanted = {normalize_city(token) for token in args.city_token}
+    excluded = {normalize_city(token) for token in args.exclude_city_token}
     found = set()
     for city_name, path in city_cell_tables(args.cell_map_dir):
-        city = normalize_token(city_name)
+        city = normalize_city(city_name)
         if wanted and city not in wanted:
             continue
         if city in excluded:
@@ -188,35 +178,6 @@ def iter_city_cells(args: argparse.Namespace) -> Iterable[tuple[str, list[dict]]
     missing = sorted(wanted - found)
     if missing:
         raise FileNotFoundError(f"No Sentinel cell map found for city token(s): {', '.join(missing)}")
-
-
-def parse_number_list(text: str, min_value: int, max_value: int) -> list[int]:
-    values: set[int] = set()
-    for part in str(text or "").split(","):
-        part = part.strip()
-        if not part:
-            continue
-        if "-" in part:
-            start_text, end_text = part.split("-", 1)
-            start = int(start_text)
-            end = int(end_text)
-            values.update(range(start, end + 1))
-        else:
-            values.add(int(part))
-    bad = sorted(value for value in values if value < min_value or value > max_value)
-    if bad:
-        raise ValueError(f"Values out of range {min_value}-{max_value}: {bad}")
-    return sorted(values)
-
-
-def parse_date(value: str) -> date:
-    for fmt in ("%Y-%m-%d", "%Y%m%d", "%Y-%m", "%Y%m", "%Y"):
-        try:
-            parsed = datetime.strptime(value, fmt)
-            return parsed.date()
-        except ValueError:
-            continue
-    raise ValueError(f"Could not parse date {value!r}")
 
 
 def month_iter(start: date, end: date) -> Iterable[date]:
@@ -253,8 +214,8 @@ def build_dates(args: argparse.Namespace) -> list[str]:
     if not args.start_date or not args.end_date:
         raise ValueError("--start-date and --end-date are required unless --dates, --years, or normals are used.")
 
-    start = parse_date(args.start_date)
-    end = parse_date(args.end_date)
+    start = parse_flexible_date(args.start_date)
+    end = parse_flexible_date(args.end_date)
     if start > end:
         raise ValueError("--start-date must be <= --end-date")
 
