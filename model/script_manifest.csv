@@ -1,0 +1,13 @@
+path,stage,role,status
+discriminator/train_taxon_discriminator.py,discriminator,train the taxon discriminator and export validation embeddings,final training
+discriminator/select_group_count.py,discriminator,compare candidate group counts with validation embeddings,exploratory validation
+discriminator/bootstrap_fixed_k_consensus.py,discriminator,freeze core-taxon k11 assignments,final group construction
+discriminator/select_collapsed_group_count.py,discriminator,apply the collapsed-group stopping rule,final validation
+discriminator/export_rare_taxon_embeddings.py,discriminator,embed taxa with 50–499 records using the frozen encoder,final inference
+discriminator/extend_partition_with_rare_taxa.py,discriminator,assign rare taxa from development-only centroids,final group construction
+discriminator/evaluate_independent_test.py,discriminator,evaluate frozen groupings on the independent test split,independent evaluation
+stage2/run_final_model.py,stage2,launch the frozen final k11 training configuration,final training
+stage2/train_fixed_partition_classifier.py,stage2,train fixed-partition models and controlled experiments,training engine
+stage2/evaluate_checkpoint_ensemble.py,stage2,ensemble checkpoints and report k11 and collapsed_k6 performance,independent evaluation
+stage2/clean_mmap_loader.py,stage2,load optional prepared memory-mapped arrays,supporting module
+model_components.py,shared,provide shared raster sequence and vector encoders,supporting module

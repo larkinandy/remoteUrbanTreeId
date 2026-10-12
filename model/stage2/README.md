@@ -1,8 +1,9 @@
 # Stage-two classifier
 
 This directory reproduces the final stage-two manuscript model. The model is
-trained against the frozen 11-group taxon partition in
-`../../config/final_k11_partition.npz`. It does not train a six-class network.
+trained against the frozen `k11` taxon partition in
+`../../config/final_k11_partition.npz`. It does not train directly in the
+`collapsed_k6` label space.
 
 ## Final training
 
@@ -49,7 +50,7 @@ python model/stage2/evaluate_checkpoint_ensemble.py `
 ```
 
 The evaluator selects the five checkpoints ranked by validation score and
-averages their 11-class softmax probabilities. It then loads
+averages their `k11` softmax probabilities. It then loads
 `../../config/final_k11_to_k6_collapse.npz`, sums the corresponding class
 probabilities, and calculates the reported `collapsed_k6` predictions. The
 ensemble therefore occurs before the probability-sum collapse.

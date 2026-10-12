@@ -147,7 +147,7 @@ def main() -> None:
 
     with np.load(args.k11_partition, allow_pickle=False) as part:
         if not np.array_equal(np.asarray(part["label_columns"], dtype=str), val_labels):
-            raise ValueError("k=11 partition taxon order differs from embedding labels")
+            raise ValueError("k11 partition taxon order differs from embedding labels")
         assignment_k11 = np.asarray(part["assignments"], dtype=np.int64)
         validation_counts = np.asarray(part["validation_counts"], dtype=np.int64)
         taxon_centroids = np.asarray(part["full_validation_centroids"], dtype=np.float64)
@@ -155,7 +155,7 @@ def main() -> None:
     with np.load(args.k11_prototypes, allow_pickle=False) as proto:
         prototypes_k11 = normalize_rows(proto["group_centroids"])
         if not np.array_equal(np.asarray(proto["assignments"], dtype=np.int64), assignment_k11):
-            raise ValueError("Stored k=11 prototypes do not match the frozen partition")
+            raise ValueError("Stored k11 prototypes do not match the frozen partition")
 
     with np.load(args.collapse, allow_pickle=False) as collapsed:
         k11_to_k6 = np.asarray(collapsed["initial_group_assignment"], dtype=np.int64)
