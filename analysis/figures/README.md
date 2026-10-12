@@ -6,7 +6,7 @@ remain under `outputs/` and are not version controlled.
 
 `figure_manifest.csv` identifies each retained figure, its status, generating
 script, inputs, and default output. `figure_grouping.json` contains display-only
-group ordering and colors. The scientific k=11-to-k=6 collapse is always read
+group ordering and colors. The scientific k11-to-collapsed_k6 mapping is always read
 from `../../config/final_grouping.json`.
 
 ## Frozen inputs
@@ -15,6 +15,11 @@ Small publication-facing inputs are stored in `provenance/`; their sizes and
 SHA-256 checksums are recorded in `provenance/manifest.csv`. Large model
 predictions, embeddings, and complete shards remain external study artifacts.
 Scripts that require them expose explicit command-line paths.
+
+Shared loading, boolean parsing, and export behavior is implemented in
+`figure_data.py`. Matplotlib figures are exported consistently as SVG, PDF,
+and 600-dpi PNG files. The custom discrimination-space SVG renderers retain
+SVG as their canonical editable output.
 
 The prototype-margin tables were regenerated using rare-taxon centroids from
 development records only. Core-taxon count and order are read from the frozen
@@ -39,13 +44,13 @@ python analysis/figures/plot_taxon_error_vs_margin.py `
 ```
 
 The discrimination-space renderer uses `--group-space collapsed_k6` for the
-reported six-group view and `--hybrid-legend` for the canonical hierarchy
+reported `collapsed_k6` view and `--hybrid-legend` for the canonical hierarchy
 legend. The latter can be combined with the documented manuscript group order.
 
 ## Terminology
 
 - `k11`: intermediate model label space.
-- `collapsed_k6`: final reporting space obtained by summing ensembled k=11
+- `collapsed_k6`: final reporting space obtained by summing ensembled k11
   probabilities according to the frozen collapse.
 - Core taxa: taxa used to train the discriminator.
 - Rare-extension taxa: taxa assigned after discriminator training using

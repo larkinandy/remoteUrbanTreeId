@@ -12,12 +12,12 @@ ROOT = Path(__file__).resolve().parents[2]
 FIGURE_ROOT = Path(__file__).resolve().parent
 
 
-def _read_json(path: Path) -> dict:
+def _read_json(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def canonical_collapse_zero_based() -> np.ndarray:
-    """Return the frozen analytical k=11 to reported k=6 mapping."""
+    """Return the frozen analytical k11-to-collapsed_k6 mapping."""
     grouping = _read_json(ROOT / "config" / "final_grouping.json")
     mapping = np.asarray(grouping["collapse_map_one_based"], dtype=np.int64) - 1
     if len(mapping) != grouping["intermediate_group_count"]:
@@ -26,7 +26,7 @@ def canonical_collapse_zero_based() -> np.ndarray:
 
 
 def analytical_to_manuscript_zero_based() -> np.ndarray:
-    """Return the display-only relabeling for analytical k=11 identifiers."""
+    """Return the display-only relabeling for analytical k11 identifiers."""
     display = _read_json(FIGURE_ROOT / "figure_grouping.json")
     mapping = np.asarray(display["analytical_to_manuscript_one_based"], dtype=np.int64) - 1
     if sorted(mapping.tolist()) != list(range(len(mapping))):
