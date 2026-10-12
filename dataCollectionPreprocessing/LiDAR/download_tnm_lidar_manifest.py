@@ -24,17 +24,11 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 
-HERE = Path(__file__).resolve().parent
-DEFAULT_MANIFEST = HERE / "tnm_lidar_download_manifest.csv"
-DEFAULT_STATUS_JSON = HERE / "tnm_lidar_download_status.json"
-DEFAULT_LIDAR_ROOT = Path(r"E:\LiDAR")
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
-    parser.add_argument("--status-json", type=Path, default=DEFAULT_STATUS_JSON)
-    parser.add_argument("--lidar-root", type=Path, default=DEFAULT_LIDAR_ROOT)
+    parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--status-json", type=Path, required=True)
+    parser.add_argument("--lidar-root", type=Path, required=True)
     parser.add_argument("--workers", type=int, default=4, help="Global concurrent download limit.")
     parser.add_argument("--per-host", type=int, default=3)
     parser.add_argument("--per-project", type=int, default=2)

@@ -39,23 +39,14 @@ from identify_tnm_lidar_city_coverage import (
 )
 
 
-HERE = Path(__file__).resolve().parent
-DEFAULT_CELL_MAP_DIR = HERE.parents[0] / "Sentinel2" / "mccoy_sentinel_10m_cells_utm"
-DEFAULT_CITY_MANIFEST = HERE.parents[0] / "NAIP" / "naip_county_manifest.json"
-DEFAULT_OUTPUT_CSV = HERE / "tnm_lidar_download_manifest.csv"
-DEFAULT_OUTPUT_JSON = HERE / "tnm_lidar_download_manifest.json"
-DEFAULT_CITY_SUMMARY_CSV = HERE / "tnm_lidar_download_city_summary.csv"
-DEFAULT_LIDAR_ROOT = Path(r"E:\LiDAR")
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--cell-map-dir", type=Path, default=DEFAULT_CELL_MAP_DIR)
-    parser.add_argument("--city-manifest", type=Path, default=DEFAULT_CITY_MANIFEST)
-    parser.add_argument("--output-csv", type=Path, default=DEFAULT_OUTPUT_CSV)
-    parser.add_argument("--output-json", type=Path, default=DEFAULT_OUTPUT_JSON)
-    parser.add_argument("--city-summary-csv", type=Path, default=DEFAULT_CITY_SUMMARY_CSV)
-    parser.add_argument("--lidar-root", type=Path, default=DEFAULT_LIDAR_ROOT)
+    parser.add_argument("--cell-map-dir", type=Path, required=True)
+    parser.add_argument("--city-manifest", type=Path, required=True)
+    parser.add_argument("--output-csv", type=Path, required=True)
+    parser.add_argument("--output-json", type=Path, required=True)
+    parser.add_argument("--city-summary-csv", type=Path, required=True)
+    parser.add_argument("--lidar-root", type=Path, required=True)
     parser.add_argument("--city-token", action="append", default=[], help="Optional city folder/name/code filter. Repeatable.")
     parser.add_argument("--project", action="append", default=[], help="Optional TNM project filter. Repeatable.")
     parser.add_argument(

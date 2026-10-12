@@ -30,18 +30,14 @@ from collections import Counter
 from pathlib import Path
 
 
-HERE = Path(__file__).resolve().parent
-DEFAULT_CELL_MAP_DIR = HERE.parents[0] / "Sentinel2" / "mccoy_sentinel_10m_cells_utm"
-DEFAULT_OUTPUT_CSV = HERE / "tnm_lidar_city_coverage.csv"
-DEFAULT_OUTPUT_JSON = HERE / "tnm_lidar_city_coverage.json"
 TNM_PRODUCTS_URL = "https://tnmaccess.nationalmap.gov/api/v1/products"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--cell-map-dir", type=Path, default=DEFAULT_CELL_MAP_DIR)
-    parser.add_argument("--output-csv", type=Path, default=DEFAULT_OUTPUT_CSV)
-    parser.add_argument("--output-json", type=Path, default=DEFAULT_OUTPUT_JSON)
+    parser.add_argument("--cell-map-dir", type=Path, required=True)
+    parser.add_argument("--output-csv", type=Path, required=True)
+    parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--city-token", default="", help="Optional city folder/name filter.")
     parser.add_argument("--project", action="append", default=[], help="Optional TNM project filter. Repeatable.")
     parser.add_argument("--bbox-buffer-metres", type=float, default=500.0)

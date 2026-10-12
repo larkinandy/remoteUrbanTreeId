@@ -5,12 +5,8 @@ This is the single entry point for the clean tree_id-centered LiDAR workflow.
 It reads current crown metadata directly and bins LiDAR points into the
 footprint of each tree-centered NAIP crop.
 
-Default outputs:
-  E:/TreeCenteredModelInputs/tree_centered_lidar_products_all_cell_screen_disabled/Candidates/<city>/<project>/Binned/
-  E:/TreeCenteredModelInputs/tree_centered_lidar_products_all_cell_screen_disabled/DTM/<city>/
-  E:/TreeCenteredModelInputs/tree_centered_lidar_products_all_cell_screen_disabled/DSM/<city>/
-  E:/TreeCenteredModelInputs/tree_centered_lidar_products_all_cell_screen_disabled/CHM/<city>/
-  E:/TreeCenteredModelInputs/tree_centered_lidar_products_all_cell_screen_disabled/Point_Counts/<city>/
+All input and output roots are explicit command-line arguments so that the
+workflow is portable across workstations.
 """
 
 from __future__ import annotations
@@ -34,12 +30,6 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 import tree_centered_lidar_utils as lidar_utils
-
-
-DEFAULT_CROP_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean")
-DEFAULT_LIDAR_ROOT = Path(r"E:\LiDAR")
-DEFAULT_OUTPUT_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_centered_lidar_products_clean")
-DEFAULT_RUN_SUMMARY = HERE / "tree_centered_lidar_crop_products_laspy_summary.csv"
 
 
 @dataclass(frozen=True)
@@ -75,23 +65,23 @@ class TreeCityJob:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--stage", choices=("all", "bin", "derive"), default="all")
-    parser.add_argument("--manifest", type=Path, default=lidar_utils.DEFAULT_MANIFEST)
-    parser.add_argument("--city-summary", type=Path, default=lidar_utils.DEFAULT_CITY_SUMMARY)
-    parser.add_argument("--crop-root", type=Path, default=DEFAULT_CROP_ROOT)
-    parser.add_argument("--lidar-root", type=Path, default=DEFAULT_LIDAR_ROOT)
+    parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--city-summary", type=Path, required=True)
+    parser.add_argument("--crop-root", type=Path, required=True)
+    parser.add_argument("--lidar-root", type=Path, required=True)
     parser.add_argument(
         "--use-manifest-local-path",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Prefer the manifest local_path column when that file exists; otherwise use --lidar-root/relative_path.",
     )
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--candidate-root", type=Path)
     parser.add_argument("--dtm-root", type=Path)
     parser.add_argument("--dsm-root", type=Path)
     parser.add_argument("--chm-root", type=Path)
     parser.add_argument("--count-root", type=Path)
-    parser.add_argument("--run-summary", type=Path, default=DEFAULT_RUN_SUMMARY)
+    parser.add_argument("--run-summary", type=Path, required=True)
     parser.add_argument("--city-token", action="append", default=[], help="Restrict to city token/name/code. Repeatable.")
     parser.add_argument("--exclude-city-token", action="append", default=[])
     parser.add_argument("--metadata-pattern", default="*_tree_centered_nearest_64px_metadata.csv")

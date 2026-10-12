@@ -10,9 +10,6 @@ from pathlib import Path
 from typing import Callable
 
 
-HERE = Path(__file__).resolve().parent
-DEFAULT_MANIFEST = HERE / "tnm_lidar_download_manifest.csv"
-DEFAULT_CITY_SUMMARY = HERE / "tnm_lidar_download_city_summary.csv"
 FOOT_TO_METRE = 0.3048
 
 

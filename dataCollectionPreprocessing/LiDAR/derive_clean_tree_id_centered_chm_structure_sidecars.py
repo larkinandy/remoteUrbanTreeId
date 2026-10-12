@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
 """Derive CHM/structure sidecars for the clean tree_id-centered dataset.
 
-This consumes the clean standalone products:
-
-* NAIP crops and metadata:
-  ``H:/TreeCenteredModelInputs/tree_centered_naip_crops_clean/<city>/``
-* LiDAR CHM products:
-  ``H:/TreeCenteredModelInputs/tree_centered_lidar_products_clean/CHM/<city>/``
-
-Outputs one row-aligned sidecar per city under:
-``H:/TreeCenteredModelInputs/tree_centered_chm_structure_clean``.
+Input and output roots are supplied explicitly on the command line. The script
+consumes the clean NAIP crops/metadata and tree-centered LiDAR CHM products,
+then writes one row-aligned sidecar per city.
 
 Rows are aligned by ``tree_id`` when the LiDAR index contains it.  For older
 clean LiDAR products generated before ``tree_id`` was added to the index, rows
@@ -30,16 +24,11 @@ import pandas as pd
 import naip_chm_structure_metrics as derived_metrics
 
 
-DEFAULT_CROP_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean")
-DEFAULT_LIDAR_PRODUCT_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_centered_lidar_products_clean")
-DEFAULT_OUTPUT_DIR = Path(r"H:\TreeCenteredModelInputs\tree_centered_chm_structure_clean")
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--crop-root", type=Path, default=DEFAULT_CROP_ROOT)
-    parser.add_argument("--lidar-product-root", type=Path, default=DEFAULT_LIDAR_PRODUCT_ROOT)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--crop-root", type=Path, required=True)
+    parser.add_argument("--lidar-product-root", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--city-token", action="append", default=None)
     parser.add_argument("--exclude-city-token", action="append", default=[])
     parser.add_argument("--metadata-pattern", default="*_tree_id_centered_nearest_64px_metadata.csv")
