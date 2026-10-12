@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the publication gate-weight boxplot and contextual-deviation multipanel figure."""
+"""Render the final gate-distribution and contextual-deviation multipanel figure."""
 
 from __future__ import annotations
 
@@ -11,9 +11,11 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
+from figure_data import load_gate_weight_tables, save_figure_formats
+
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_INPUT = ROOT / "outputs" / "reviewer_revision" / "final_gate_weight_stratified_analysis"
+DEFAULT_INPUT = ROOT / "analysis" / "figures" / "provenance"
 DEFAULT_OUTPUT = ROOT / "outputs" / "reviewer_revision" / "final_model_gate_weight_multipanel"
 MODALITIES = (
     "tree_centered_naip",
@@ -36,45 +38,35 @@ LABELS = {
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT)
+    p.add_argument(
+        "--box-summary", type=Path,
+        default=DEFAULT_INPUT / "gate_weight_boxplot_summary.csv",
+        help="Frozen QA-screened boxplot statistics.",
+    )
     p.add_argument("--output-prefix", type=Path, default=DEFAULT_OUTPUT)
     p.add_argument("--minimum-city-support", type=int, default=100)
     p.add_argument("--dpi", type=int, default=600)
     return p.parse_args()
 
 
-def box_statistics(values: np.ndarray, label: str) -> dict[str, float | str]:
-    q1, median, q3 = np.quantile(values, [0.25, 0.50, 0.75])
-    iqr = q3 - q1
-    lower = q1 - 1.5 * iqr
-    upper = q3 + 1.5 * iqr
-    within = values[(values >= lower) & (values <= upper)]
+def box_statistics(row: pd.Series, label: str) -> dict[str, float | str | list]:
     return {
         "label": label,
-        "whislo": float(within.min()),
-        "q1": float(q1),
-        "med": float(median),
-        "q3": float(q3),
-        "whishi": float(within.max()),
-        "mean": float(values.mean()),
+        "whislo": float(row["whislo"]),
+        "q1": float(row["q1"]),
+        "med": float(row["median"]),
+        "q3": float(row["q3"]),
+        "whishi": float(row["whishi"]),
+        "mean": float(row["mean"]),
         "fliers": [],
     }
 
 
 def main() -> int:
     a = parse_args()
-    records = pd.read_csv(a.input_dir / "gate_weight_stratification_records.csv.gz")
-    records = records.loc[records["qa_screened"].astype(bool)].copy()
-    overall = pd.read_csv(a.input_dir / "gate_weights_overall.csv").set_index("modality")["mean"]
-    city = pd.read_csv(a.input_dir / "gate_weights_by_city.csv")
-    height = pd.read_csv(a.input_dir / "gate_weights_by_height_class_qa_screened.csv")
-    provenance = pd.read_csv(a.input_dir / "gate_weights_by_taxon_provenance.csv")
-
-    city = city.loc[city["support"].ge(a.minimum_city_support)].copy()
-    city["deviation_pp"] = 100.0 * (city["mean"] - city["modality"].map(overall))
-    height = height.loc[height["height_class"].isin(["2–5 m", "5–10 m", ">=10 m"])].copy()
-    height["deviation_pp"] = 100.0 * (height["mean"] - height["modality"].map(overall))
-    provenance["deviation_pp"] = 100.0 * (provenance["mean"] - provenance["modality"].map(overall))
-    city_ranges = city.groupby("modality")["deviation_pp"].agg(["min", "max", "count"])
+    box_summary = pd.read_csv(a.box_summary).set_index("modality")
+    tables = load_gate_weight_tables(a.input_dir, a.minimum_city_support)
+    height, provenance, city_ranges = tables.height, tables.provenance, tables.city_ranges
 
     plt.rcParams.update({
         "font.family": "Arial",
@@ -94,7 +86,7 @@ def main() -> int:
     positions = np.arange(len(MODALITIES))[::-1]
 
     stats = [
-        box_statistics(records[f"gate_{modality}"].to_numpy(dtype=float), LABELS[modality])
+        box_statistics(box_summary.loc[modality], LABELS[modality])
         for modality in MODALITIES
     ]
     artists = box_ax.bxp(
@@ -174,15 +166,13 @@ def main() -> int:
             ax.spines[spine].set_visible(False)
         ax.spines["bottom"].set_color("#77838d")
     box_ax.text(
-        1.0, -0.235, f"n = {len(records):,} QA-screened test records; whiskers = 1.5×IQR; outliers not shown",
+        1.0, -0.235,
+        f"n = {int(box_summary['records'].max()):,} QA-screened test records; whiskers = 1.5×IQR; outliers not shown",
         transform=box_ax.transAxes, ha="right", va="top", fontsize=7.2, color="#5f6d79",
     )
     fig.subplots_adjust(left=0.215, right=0.99, top=0.91, bottom=0.29)
 
-    a.output_prefix.parent.mkdir(parents=True, exist_ok=True)
-    for extension in ("png", "pdf", "svg"):
-        path = a.output_prefix.with_suffix(f".{extension}")
-        fig.savefig(path, dpi=a.dpi if extension == "png" else None, bbox_inches="tight", facecolor="white")
+    for path in save_figure_formats(fig, a.output_prefix, a.dpi):
         print(path)
     plt.close(fig)
     return 0

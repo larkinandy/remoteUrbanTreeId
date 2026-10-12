@@ -1,0 +1,13 @@
+{
+  "records": 161508,
+  "probability_error_definition": "1 - ensemble probability assigned to the actual k=11 class",
+  "distance_median_m": 2.37227725,
+  "distance_q25_m": 1.457545675,
+  "distance_q75_m": 3.4242861,
+  "probability_error_mean": 0.41885626426576544,
+  "probability_error_median": 0.35702428221702576,
+  "pearson_r": 0.06929191778748321,
+  "pearson_p": 1.8044181842997838e-171,
+  "spearman_rho": 0.06889550816717764,
+  "spearman_p": 1.579191199994114e-169
+}

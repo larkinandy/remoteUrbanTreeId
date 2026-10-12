@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot test-record density by crown-match distance and probability error."""
+"""Prepare and plot independent-test uncertainty across crown-match distance."""
 
 from __future__ import annotations
 
@@ -15,6 +15,9 @@ from matplotlib.colors import LinearSegmentedColormap, LogNorm
 import numpy as np
 import pandas as pd
 
+from figure_config import canonical_collapse_zero_based
+from figure_data import save_figure_formats
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -26,8 +29,8 @@ def parse_args() -> argparse.Namespace:
         default=ROOT / "outputs" / "reviewer_revision" / "final_pruned_k11_test_top5_ensemble" / "ensemble_predictions.npz",
     )
     p.add_argument(
-        "--shard-root", type=Path,
-        default=Path(r"H:\TreeCenteredModelInputs\tree_centered_complete_sharded100k_prism_daily3_clean"),
+        "--shard-root", type=Path, required=True,
+        help="Complete shard root, typically below $DATA_ROOT.",
     )
     p.add_argument(
         "--output-dir", type=Path,
@@ -36,12 +39,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--distance-bin-width", type=float, default=0.25)
     p.add_argument("--hexbin-gridsize", type=int, default=50)
     p.add_argument(
-        "--collapse-map",
-        default=None,
-        help=(
-            "Optional comma-separated one-based collapsed group for each source class. "
-            "Source probabilities are summed before true-class probability error is calculated."
-        ),
+        "--group-space", choices=("k11", "collapsed_k6"), default="k11",
+        help="Reporting label space; collapsed_k6 uses config/final_grouping.json.",
     )
     return p.parse_args()
 
@@ -108,11 +107,8 @@ def main() -> None:
     if len(labels) != len(metadata):
         raise RuntimeError("Prediction and metadata row counts differ")
     reporting_k = probabilities.shape[1]
-    collapse_map = None
-    if args.collapse_map:
-        collapse_map = np.asarray(
-            [int(value.strip()) - 1 for value in args.collapse_map.split(",")], dtype=np.int64
-        )
+    collapse_map = canonical_collapse_zero_based() if args.group_space == "collapsed_k6" else None
+    if collapse_map is not None:
         if len(collapse_map) != probabilities.shape[1]:
             raise ValueError(
                 f"Collapse map has {len(collapse_map)} entries for "
@@ -155,7 +151,8 @@ def main() -> None:
         "records": int(len(distance)),
         "reporting_groups": reporting_k,
         "source_groups": int(len(collapse_map)) if collapse_map is not None else reporting_k,
-        "collapse_map": args.collapse_map,
+        "label_space": args.group_space,
+        "collapse_map_zero_based": collapse_map.tolist() if collapse_map is not None else None,
         "probability_error_definition": (
             f"1 - summed ensemble probability assigned to the actual collapsed k={reporting_k} class"
             if collapse_map is not None
@@ -214,11 +211,11 @@ def main() -> None:
     cbar.set_label("Test records per hexagon (log scale)", fontsize=11)
     cbar.ax.tick_params(labelsize=10)
     fig.subplots_adjust(left=0.11, right=0.88, bottom=0.11, top=0.86)
-    for suffix in ("png", "svg", "pdf"):
-        fig.savefig(
-            args.output_dir / f"test_k{reporting_k}_probability_error_vs_match_distance.{suffix}",
-            facecolor="white",
-        )
+    save_figure_formats(
+        fig,
+        args.output_dir / f"test_{args.group_space}_probability_error_vs_match_distance",
+        dpi=600,
+    )
     plt.close(fig)
     print(json.dumps(summary, indent=2))
 

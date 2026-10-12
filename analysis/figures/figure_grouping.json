@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "analytical_to_manuscript_one_based": [1, 2, 3, 4, 6, 7, 9, 10, 8, 11, 5],
+  "collapsed_k6_colors": ["#0072B2", "#E69F00", "#009E73", "#D55E00", "#CC79A7", "#332288"],
+  "k11_analytical_colors": ["#005A8D", "#56B4E9", "#A96500", "#E69F00", "#006D50", "#009E73", "#D55E00", "#CC79A7", "#66C2A5", "#332288", "#F2C14E"],
+  "k11_manuscript_colors": ["#005A8D", "#56B4E9", "#A96500", "#E69F00", "#F2C14E", "#006D50", "#009E73", "#66C2A5", "#D55E00", "#CC79A7", "#332288"],
+  "notes": [
+    "Analytical identifiers are the model class order.",
+    "Manuscript identifiers are display-only and place k=11 classes belonging to the same collapsed group consecutively.",
+    "The scientific collapse is loaded from config/final_grouping.json and is not duplicated here."
+  ]
+}
