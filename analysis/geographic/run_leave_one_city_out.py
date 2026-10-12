@@ -29,9 +29,12 @@ from geographic_utils import (
     collapse_map_string,
     eligible_city_support,
     load_predictions,
+    load_geographic_config,
     load_qa_flags,
     metric_set,
+    scientific_training_arguments,
     screen_qa,
+    update_status_manifest,
     validate_split_manifest,
 )
 
@@ -46,6 +49,7 @@ DEFAULT_GEOGRAPHIC_CONFIG = ROOT / "analysis" / "geographic" / "geographic_confi
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse portable data paths and runtime-only performance settings."""
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("--complete-shard-root", type=Path, required=True)
     p.add_argument("--prepared-mmap-root", type=Path, required=True)
@@ -71,11 +75,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--device", default="cuda")
     p.add_argument("--list-cities", action="store_true")
     p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--force", action="store_true", help="Allow trainer/evaluator reuse of nonempty output directories.")
+    p.add_argument("--overwrite", action="store_true", help="Restart or replace an existing city run.")
     return p.parse_args()
 
 
 def run_streamed(command: list[str], log_path: Path, cwd: Path) -> None:
+    """Run a subprocess while mirroring its output to the console and a log."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     print(subprocess.list2cmdline(command), flush=True)
     with log_path.open("a", encoding="utf-8", buffering=1) as log:
@@ -99,8 +104,9 @@ def aggregate(
     minimum_group_records: int,
     collapse_map: str,
 ) -> None:
+    """Aggregate every completed eligible-city prediction with final reporting rules."""
     city_rows, group_rows = [], []
-    native_labels, native_predictions, collapsed_labels, collapsed_predictions = [], [], [], []
+    k11_labels, k11_predictions, collapsed_labels, collapsed_predictions = [], [], [], []
     completed = []
     for city in cities:
         run_dir = result_root / f"loco_{city}_test_top5_ensemble"
@@ -113,44 +119,51 @@ def aggregate(
         )
         y11 = screened["k11_label_loco"].to_numpy()
         p11 = screened["k11_prediction_loco"].to_numpy()
-        y6 = screened["collapsed_k6_label_loco"].to_numpy()
-        p6 = screened["collapsed_k6_prediction_loco"].to_numpy()
+        collapsed_label = screened["collapsed_k6_label_loco"].to_numpy()
+        collapsed_prediction = screened["collapsed_k6_prediction_loco"].to_numpy()
         m11, _, _ = metric_set(y11, p11, 11, minimum_group_records)
-        m6, pg6, _ = metric_set(y6, p6, 6, minimum_group_records)
+        collapsed_metrics, collapsed_per_group, _ = metric_set(
+            collapsed_label, collapsed_prediction, 6, minimum_group_records
+        )
         city_rows.append({
             "city": city,
             **{f"k11_{key}": value for key, value in m11.items()},
-            **{f"collapsed_k6_{key}": value for key, value in m6.items()},
+            **{f"collapsed_k6_{key}": value for key, value in collapsed_metrics.items()},
         })
-        group_rows.extend({"city": city, **row} for row in pg6)
-        native_labels.append(y11); native_predictions.append(p11)
-        collapsed_labels.append(y6); collapsed_predictions.append(p6)
+        group_rows.extend({"city": city, **row} for row in collapsed_per_group)
+        k11_labels.append(y11); k11_predictions.append(p11)
+        collapsed_labels.append(collapsed_label); collapsed_predictions.append(collapsed_prediction)
         completed.append(city)
     if not completed:
         return
     city_frame = pd.DataFrame(city_rows).sort_values("city")
     city_frame.to_csv(result_root / "loco_city_summary.csv", index=False)
     pd.DataFrame(group_rows).to_csv(result_root / "loco_city_collapsed_k6_per_group_metrics.csv", index=False)
-    y11, p11 = np.concatenate(native_labels), np.concatenate(native_predictions)
-    y6, p6 = np.concatenate(collapsed_labels), np.concatenate(collapsed_predictions)
+    y11, p11 = np.concatenate(k11_labels), np.concatenate(k11_predictions)
+    collapsed_label = np.concatenate(collapsed_labels)
+    collapsed_prediction = np.concatenate(collapsed_predictions)
     m11, pg11, cm11 = metric_set(y11, p11, 11, minimum_group_records)
-    m6, pg6, cm6 = metric_set(y6, p6, 6, minimum_group_records)
+    collapsed_metrics, collapsed_per_group, collapsed_confusion = metric_set(
+        collapsed_label, collapsed_prediction, 6, minimum_group_records
+    )
     pooled = {
         "completed_cities": completed,
         "qa_screen": "excluded qa_flag_low_vegetated_height_with_lidar records",
         "minimum_group_records_for_macro_f1": minimum_group_records,
         "k11": m11,
-        "collapsed_k6": m6,
+        "collapsed_k6": collapsed_metrics,
         "collapse_map": collapse_map,
     }
     (result_root / "loco_pooled_summary.json").write_text(json.dumps(pooled, indent=2), encoding="utf-8")
     pd.DataFrame(pg11).to_csv(result_root / "loco_pooled_k11_per_group_metrics.csv", index=False)
-    pd.DataFrame(pg6).to_csv(result_root / "loco_pooled_collapsed_k6_per_group_metrics.csv", index=False)
+    pd.DataFrame(collapsed_per_group).to_csv(result_root / "loco_pooled_collapsed_k6_per_group_metrics.csv", index=False)
     pd.DataFrame(cm11).to_csv(result_root / "loco_pooled_k11_confusion_counts.csv", index=False)
-    pd.DataFrame(cm6).to_csv(result_root / "loco_pooled_collapsed_k6_confusion_counts.csv", index=False)
+    pd.DataFrame(collapsed_confusion).to_csv(result_root / "loco_pooled_collapsed_k6_confusion_counts.csv", index=False)
 
 
 def training_command(a: argparse.Namespace, city: str, run_name: str) -> list[str]:
+    """Construct a LOCO training command from frozen scientific settings."""
+    configuration = load_geographic_config(a.geographic_config)
     cmd = [
         sys.executable, str(TRAINER),
         "--complete-shard-root", str(a.complete_shard_root),
@@ -159,39 +172,21 @@ def training_command(a: argparse.Namespace, city: str, run_name: str) -> list[st
         "--output-dir", str(a.model_output_dir), "--run-name", run_name,
         "--grouping-scheme", "species_partition", "--species-partition", str(a.species_partition),
         "--split-manifest", str(a.split_manifest), "--leave-one-city-out-test-city", city,
-        "--seed", "13", "--reassign-capped-eval-to-train", "--exclude-qa-from-model",
-        "--no-exclude-qa-warning-from-model", "--use-qa-sample-weights",
-        "--low-center-vegetation-weight", "0.25", "--low-vegetated-height-with-lidar-weight", "0.50",
-        "--insufficient-lidar-coverage-weight", "0.75", "--use-distance-sample-weights",
-        "--distance-weight-sigma-m", "4.0", "--min-distance-sample-weight", "0.25",
         "--epochs", str(a.epochs), "--early-stopping-patience", str(a.early_stopping_patience),
-        "--early-stopping-min-delta", "0.0001", "--checkpoint-selection-score", "blended",
-        "--blended-score-macro-weight", "0.50", "--blended-score-accuracy-weight", "0.30",
-        "--blended-score-weighted-weight", "0.20", "--save-top-k-checkpoints", "5",
         "--batch-size", str(a.batch_size), "--num-workers", str(a.num_workers), "--eval-num-workers", "0",
         "--prefetch-factor", str(a.prefetch_factor), "--persistent-workers", "--shard-local-train-batches",
         "--shard-window-size", str(a.shard_window_size), "--max-shard-cache", str(a.max_shard_cache),
-        "--cache-val-in-memory", "--no-cache-test-in-memory", "--image-center-crop-pixels", "28",
-        "--image-encoder-normalization", "group", "--naip-encoder-normalization", "group",
-        "--chm-encoder-normalization", "group", "--interaction-encoder-normalization", "group",
-        "--independent-chm-full-extent", "--no-interaction-naip-full-extent",
-        "--interaction-naip-crop-pixels", "30", "--interaction-fusion-mode", "learned_common_grid",
-        "--interaction-naip-patch-pixels", "5", "--interaction-chm-patch-pixels", "3",
-        "--image-augmentation", "--use-sentinel-phenology", "--use-raw-sentinel",
-        "--use-satellite-embedding", "--no-use-prism-normals", "--use-naip-chm-interaction-branch",
-        "--exclude-modality", "tree_centered_structure",
-        "--phenology-stat-samples", "20000", "--raw-sentinel-stat-samples", "20000",
-        "--satellite-embedding-stat-samples", "20000", "--hidden-dim", "128", "--dropout", "0.20",
-        "--learning-rate", "0.0005", "--weight-decay", "0.0001", "--grad-clip", "2.0",
-        "--class-weighting", "sqrt_inverse", "--class-weight-max", "3.0", "--device", a.device,
+        "--cache-val-in-memory", "--no-cache-test-in-memory",
+        *scientific_training_arguments(configuration), "--device", a.device,
         "--export-validation-predictions", "--validation-only-pilot",
     ]
-    if a.force:
+    if a.overwrite:
         cmd.append("--force")
     return cmd
 
 
 def evaluation_command(a: argparse.Namespace, city: str, model_run: Path) -> list[str]:
+    """Construct independent focal-city ensemble inference."""
     collapse_map = collapse_map_string(a.grouping_config)
     cmd = [
         sys.executable, str(EVALUATOR), "--model-run-dir", str(model_run), "--top-k", "5",
@@ -203,12 +198,13 @@ def evaluation_command(a: argparse.Namespace, city: str, model_run: Path) -> lis
         "--batch-size", str(a.batch_size), "--num-workers", "2", "--max-shard-cache", str(a.max_shard_cache),
         "--collapse-map", collapse_map, "--device", a.device, "--export-predictions",
     ]
-    if a.force:
+    if a.overwrite:
         cmd.append("--force")
     return cmd
 
 
 def main() -> int:
+    """Run, resume, or inspect the configured LOCO campaign."""
     a = parse_args()
     required = [
         TRAINER, EVALUATOR, a.complete_shard_root, a.prepared_mmap_root,
@@ -244,8 +240,9 @@ def main() -> int:
         model_run = a.model_output_dir / run_name
         result_run = a.result_output_dir / f"loco_{city}_test_top5_ensemble"
         print(f"\n[{index}/{len(cities)}] focal city: {city}", flush=True)
-        if (result_run / "ensemble_summary.json").exists() and not a.force:
+        if (result_run / "ensemble_summary.json").exists() and not a.overwrite:
             print(f"Completed result exists; skipping {city}: {result_run}", flush=True)
+            update_status_manifest(a.result_output_dir / "run_status.csv", city, "ensemble", "complete")
             continue
         train_cmd = training_command(a, city, run_name)
         eval_cmd = evaluation_command(a, city, model_run)
@@ -254,15 +251,28 @@ def main() -> int:
             print(subprocess.list2cmdline(eval_cmd), flush=True)
             continue
         if not (model_run / "run_config.json").exists():
-            if model_run.exists() and any(model_run.iterdir()) and not a.force:
+            if model_run.exists() and any(model_run.iterdir()) and not a.overwrite:
                 raise SystemExit(
                     f"Incomplete model directory exists for {city}: {model_run}. "
-                    "Inspect it, then rerun with --force to restart that city."
+                    "Inspect it, then rerun with --overwrite to restart that city."
                 )
-            run_streamed(train_cmd, a.result_output_dir / "logs" / f"{city}_training.log", ROOT)
+            update_status_manifest(a.result_output_dir / "run_status.csv", city, "training", "running")
+            try:
+                run_streamed(train_cmd, a.result_output_dir / "logs" / f"{city}_training.log", ROOT)
+            except Exception:
+                update_status_manifest(a.result_output_dir / "run_status.csv", city, "training", "failed")
+                raise
+            update_status_manifest(a.result_output_dir / "run_status.csv", city, "training", "complete")
         else:
             print(f"Training already complete; proceeding to ensemble: {model_run}", flush=True)
-        run_streamed(eval_cmd, a.result_output_dir / "logs" / f"{city}_ensemble.log", ROOT)
+            update_status_manifest(a.result_output_dir / "run_status.csv", city, "training", "complete")
+        update_status_manifest(a.result_output_dir / "run_status.csv", city, "ensemble", "running")
+        try:
+            run_streamed(eval_cmd, a.result_output_dir / "logs" / f"{city}_ensemble.log", ROOT)
+        except Exception:
+            update_status_manifest(a.result_output_dir / "run_status.csv", city, "ensemble", "failed")
+            raise
+        update_status_manifest(a.result_output_dir / "run_status.csv", city, "ensemble", "complete")
         aggregate(
             a.result_output_dir, all_eligible_cities, a.qa_metadata,
             a.minimum_group_records, collapse_map_string(a.grouping_config),

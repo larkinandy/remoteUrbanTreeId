@@ -19,6 +19,35 @@
     "record_key_definition": "city_token|tree_id|crop_index"
   },
   "qa_warning_excluded_from_reporting": "qa_flag_low_vegetated_height_with_lidar",
+  "training": {
+    "seed": 13,
+    "early_stopping_min_delta": 0.0001,
+    "checkpoint_selection_score": "blended",
+    "blended_score_weights": {
+      "macro_f1": 0.50,
+      "accuracy": 0.30,
+      "weighted_f1": 0.20
+    },
+    "save_top_k_checkpoints": 5,
+    "low_center_vegetation_weight": 0.25,
+    "low_vegetated_height_with_lidar_weight": 0.50,
+    "insufficient_lidar_coverage_weight": 0.75,
+    "distance_weight_sigma_m": 4.0,
+    "minimum_distance_sample_weight": 0.25,
+    "image_center_crop_pixels": 28,
+    "interaction_naip_crop_pixels": 30,
+    "interaction_naip_patch_pixels": 5,
+    "interaction_chm_patch_pixels": 3,
+    "statistics_samples": 20000,
+    "hidden_dimension": 128,
+    "dropout": 0.20,
+    "learning_rate": 0.0005,
+    "weight_decay": 0.0001,
+    "gradient_clip": 2.0,
+    "class_weighting": "sqrt_inverse",
+    "maximum_class_weight": 3.0,
+    "excluded_modality": "tree_centered_structure"
+  },
   "notes": [
     "Eligible target cities are derived after applying the reporting QA screen.",
     "The seven source cities contain at least 10 training records for every k11 group.",

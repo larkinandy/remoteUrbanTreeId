@@ -14,7 +14,9 @@ probabilities are summed into `collapsed_k6` using
   `geographic_config.json`, evaluates it within its source city, and evaluates
   transfer to the other eligible cities.
 - `analyze_seven_one_city_results.py` performs exact record/label audits and
-  compares the one-city models with the primary national model.
+  prepares comparison metrics for the one-city and primary national models.
+- `report_one_city_results.py` regenerates publication summaries from the
+  prepared source-model table without reopening the large prediction arrays.
 - `select_median_city.py` records the earlier, primary-model-only selection of a
   representative city. Geographic sensitivity results are not used for that
   selection.
@@ -26,8 +28,17 @@ probabilities are summed into `collapsed_k6` using
 Cities are eligible only when at least 1,000 independent test records remain
 after excluding `qa_flag_low_vegetated_height_with_lidar`. City-level macro-F1
 is calculated over groups with at least 10 QA-screened test records. Accuracy
-and weighted-F1 use all QA-screened records. The thresholds and source-city list
-are frozen in `geographic_config.json`.
+and weighted-F1 use all QA-screened records. The thresholds, source-city list,
+seed, optimization settings, architecture, checkpoint rule, composite-score
+weights, and sample-weight parameters are frozen in `geographic_config.json`.
+
+The training wrappers derive eligible target cities from the QA-screened
+primary test predictions. They write a restart-safe `run_status.csv` manifest
+beside the model outputs after each training or inference stage. Re-running a
+wrapper skips completed artifacts unless `--overwrite` is supplied. The
+wrappers translate that public option to the legacy `--force` option expected
+by the shared stage-two trainer and inference program; `--force` is not part of
+the geographic-analysis interface.
 
 The split manifest is intentionally supplied as an explicit argument because
 the record-level manifest is a generated dataset artifact rather than a small
@@ -58,6 +69,10 @@ python analysis/geographic/analyze_seven_one_city_results.py `
   --one-city-root "$DATA_ROOT/models/k11_one_city_seven_source" `
   --primary-predictions "$DATA_ROOT/final_model/ensemble_predictions.npz" `
   --qa-metadata "$DATA_ROOT/final_test_sensitivity_variables.csv.gz"
+
+python analysis/geographic/report_one_city_results.py `
+  --source-model-summaries "$DATA_ROOT/results/seven_one_city_analysis/source_model_summaries.csv" `
+  --output-dir "$DATA_ROOT/results/seven_one_city_analysis/reported_tables"
 ```
 
 Small publication-facing outputs and their checksums are retained in

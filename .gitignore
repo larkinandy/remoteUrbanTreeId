@@ -4,8 +4,10 @@
 # ignore files containing secrets
 *.env
 
-# ignore compiled python scripts
-*.pyc
+# ignore Python bytecode and cache directories throughout the repository
+**/__pycache__/
+*.py[cod]
+*$py.class
 
 # ignore Windows command scripts
 *.cmd
