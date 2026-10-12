@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 import json
 from pathlib import Path
 import re
@@ -26,6 +26,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+
+from prism_common import inclusive_date_range, normalize_city, parse_iso_date
 
 try:
     import rasterio
@@ -38,27 +40,6 @@ else:
 
 DEFAULT_VARIABLES = ("ppt", "tmean", "vpdmax")
 
-CITY_ALIASES = {
-    "abq": "albuquerque",
-    "ana": "anaheim",
-    "arl": "arlington",
-    "atl": "atlanta",
-    "bal": "baltimore",
-    "buf": "buffalo",
-    "cos": "coloradosprings",
-    "csp": "coloradosprings",
-    "dca": "washingtondc",
-    "dc": "washingtondc",
-    "den": "denver",
-    "ggv": "gardengrove",
-    "hnb": "huntingtonbeach",
-    "la": "losangeles",
-    "lax": "losangeles",
-    "nyc": "newyork",
-    "sf": "sanfrancisco",
-}
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--raw-root", type=Path, required=True)
@@ -66,7 +47,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--city-token", action="append", default=[])
     parser.add_argument("--exclude-city-token", action="append", default=[])
-    parser.add_argument("--variable", action="append", default=[])
+    parser.add_argument(
+        "--variables",
+        default=",".join(DEFAULT_VARIABLES),
+        help="Comma-separated PRISM variables.",
+    )
     parser.add_argument("--start-date", default="2021-01-01")
     parser.add_argument("--end-date", default="2023-12-31")
     parser.add_argument(
@@ -80,26 +65,8 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Optional smoke-test limit after date filtering; zero keeps all dates.",
     )
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
-
-
-def norm_city(value: object) -> str:
-    token = re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
-    return CITY_ALIASES.get(token, token)
-
-
-def parse_iso_date(value: str, label: str) -> date:
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError as exc:
-        raise ValueError(f"{label} must use YYYY-MM-DD; got {value!r}") from exc
-
-
-def date_range(start: date, end: date) -> list[date]:
-    if end < start:
-        raise ValueError("--end-date must be on or after --start-date")
-    return [start + timedelta(days=offset) for offset in range((end - start).days + 1)]
 
 
 def discover_cities(root: Path, pattern: str) -> list[str]:
@@ -107,7 +74,7 @@ def discover_cities(root: Path, pattern: str) -> list[str]:
         raise FileNotFoundError(root)
     cities = []
     for directory in sorted(path for path in root.iterdir() if path.is_dir()):
-        city = norm_city(directory.name)
+        city = normalize_city(directory.name)
         if (directory / pattern.format(city=city, city_token=city)).exists():
             cities.append(city)
     return sorted(set(cities))
@@ -214,11 +181,13 @@ def main() -> int:
     if rasterio is None:
         raise SystemExit(f"rasterio is required. Original import error: {RASTERIO_IMPORT_ERROR}")
 
-    variables = tuple(dict.fromkeys(str(value).strip().lower() for value in (args.variable or DEFAULT_VARIABLES)))
+    variables = tuple(
+        dict.fromkeys(value.strip().lower() for value in str(args.variables).split(",") if value.strip())
+    )
     if not variables:
         raise SystemExit("No PRISM variables selected.")
-    selected = {norm_city(value) for value in args.city_token if str(value).strip()}
-    excluded = {norm_city(value) for value in args.exclude_city_token if str(value).strip()}
+    selected = {normalize_city(value) for value in args.city_token if str(value).strip()}
+    excluded = {normalize_city(value) for value in args.exclude_city_token if str(value).strip()}
     cities = sorted(selected or discover_cities(Path(args.link_root), str(args.link_pattern)))
     cities = [city for city in cities if city not in excluded]
     if not cities:
@@ -226,7 +195,7 @@ def main() -> int:
 
     start = parse_iso_date(str(args.start_date), "--start-date")
     end = parse_iso_date(str(args.end_date), "--end-date")
-    dates = date_range(start, end)
+    dates = inclusive_date_range(start, end)
     if int(args.max_dates) > 0:
         dates = dates[: int(args.max_dates)]
 
@@ -292,8 +261,8 @@ def main() -> int:
 
     output_dir = Path(args.output_dir)
     global_path = output_dir / "prism_daily_values.npz"
-    if global_path.exists() and not bool(args.force):
-        raise SystemExit(f"Output exists: {global_path}; pass --force to replace it.")
+    if global_path.exists() and not bool(args.overwrite):
+        raise SystemExit(f"Output exists: {global_path}; pass --overwrite to replace it.")
 
     values = np.zeros((len(pixels), len(dates), len(variables)), dtype=np.float32)
     valid_mask = np.zeros_like(values, dtype=bool)
@@ -355,8 +324,8 @@ def main() -> int:
         city_dir = output_dir / city
         city_dir.mkdir(parents=True, exist_ok=True)
         city_path = city_dir / f"{city}_prism_daily_index.npz"
-        if city_path.exists() and not bool(args.force):
-            raise SystemExit(f"Output exists: {city_path}; pass --force to replace it.")
+        if city_path.exists() and not bool(args.overwrite):
+            raise SystemExit(f"Output exists: {city_path}; pass --overwrite to replace it.")
         np.savez_compressed(
             city_path,
             tree_id=frame["tree_id"].to_numpy(dtype=np.int64),

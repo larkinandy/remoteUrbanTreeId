@@ -9,6 +9,7 @@ was removed because it did not generate the final model inputs.
 
 | File | Purpose |
 |---|---|
+| `prism_common.py` | Shared city-token, date, range, and Sentinel-cell utilities. |
 | `download_prism_sentinel_cells.py` | Plans, downloads, validates, and optionally samples PRISM grids. |
 | `derive_clean_tree_id_centered_prism_daily_sidecars.py` | Creates the final daily `ppt`, `tmean`, and `vpdmax` sidecars. |
 | `freeze_study_prism_provenance.py` | Freezes path-independent city, grid, and archive provenance. |
@@ -90,15 +91,13 @@ python dataCollectionPreprocessing/PRISM/derive_clean_tree_id_centered_prism_dai
   --raw-root "$DATA_ROOT\prism\raw\daily" `
   --link-root "$DATA_ROOT\tree_record_metadata_clean" `
   --output-dir "$DATA_ROOT\tree_centered_prism_daily_clean" `
-  --variable ppt `
-  --variable tmean `
-  --variable vpdmax `
+  --variables ppt,tmean,vpdmax `
   --start-date 2021-01-01 `
   --end-date 2023-12-31
 ```
 
 Use `--max-dates` for a short smoke test. Existing completed global output is
-protected unless `--force` is supplied.
+protected unless `--overwrite` is supplied.
 
 The output contract is:
 
