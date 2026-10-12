@@ -1,0 +1,29 @@
+{
+  "data_product": "Google Satellite Embedding",
+  "earth_engine_dataset_id": "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL",
+  "years": [2021, 2022, 2023],
+  "bands": {"prefix": "A", "first": "A00", "last": "A63", "count": 64},
+  "sampling": {
+    "spatial_unit": "unique crown-centered 10 m cell",
+    "scale_m": 10,
+    "annual_composite_operation": "mosaic",
+    "earth_engine_operation": "sampleRegions",
+    "geometries_exported": false,
+    "tile_scale": 4,
+    "batch_size": 5000
+  },
+  "sidecar": {
+    "coordinate_decimals": 7,
+    "join_key": "crown_cell_id",
+    "missing_policy": "zero-filled embedding with false year mask; screened during shard assembly",
+    "quality_metrics": [
+      "embedding_year_count",
+      "embedding_has_2021",
+      "embedding_has_2022",
+      "embedding_has_2023",
+      "embedding_mean_pairwise_dot",
+      "embedding_min_pairwise_dot"
+    ]
+  },
+  "historical_study_note": "The frozen manuscript dataset combined original exports that resolved to the final crown cell with supplemental crown-cell exports. A from-scratch rebuild directly exports every final crown cell."
+}

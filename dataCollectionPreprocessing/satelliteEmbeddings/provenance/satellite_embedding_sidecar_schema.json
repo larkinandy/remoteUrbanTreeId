@@ -1,0 +1,22 @@
+{
+  "tree_id": "int64[N]",
+  "crop_index": "int64[N]",
+  "row_index": "int64[N]",
+  "crown_cell_id": "string[N]",
+  "crown_cell_epsg": "int32[N]",
+  "crown_cell_col": "int64[N]",
+  "crown_cell_row": "int64[N]",
+  "crown_cell_lat": "float64[N]",
+  "crown_cell_lon": "float64[N]",
+  "satellite_embedding": "float32[N,Y,64]",
+  "satellite_embedding_mask": "float32[N,Y]",
+  "satellite_embedding_quality": "float32[N,6]",
+  "satellite_embedding_columns": "string[64]",
+  "satellite_embedding_years": "int32[Y]",
+  "satellite_embedding_quality_columns": "string[6]",
+  "embedding_source_code": "int8[N] (0=missing, 2=direct crown-cell export; 1 is retained only for compatibility with frozen historical sidecars)",
+  "missing_satellite_embedding": "bool[N]",
+  "used_original_satellite_embedding": "bool[N] (compatibility field; false for a from-scratch rebuild)",
+  "used_additional_satellite_embedding": "bool[N] (compatibility field; true when a direct crown-cell export is used)",
+  "config_json": "scalar JSON string"
+}

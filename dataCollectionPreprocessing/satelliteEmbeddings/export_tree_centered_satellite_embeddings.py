@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Submit Google Satellite Embedding exports for missing tree-centered cells.
+"""Export annual Google Satellite Embeddings for all crown-centered 10 m cells.
 
-This mirrors the original McCoy satellite-embedding exporter, but its input is
-the per-city missing-cell CSVs produced for the tree-centered Sentinel workflow.
-Those cells are the tree-crown Sentinel grid cells not covered by the previous
-cell-centered downloads, so they are also the cells needing Satellite Embedding
-exports.
+The canonical input is the final tree-centered NAIP metadata. Crown coordinates
+are converted to unique 10 m grid cells, and one embedding is requested for each
+cell and year. A prepared point CSV may be supplied for reruns, but Sentinel-2
+missing-cell inventories are not part of the from-scratch workflow.
 """
 
 from __future__ import annotations
@@ -18,16 +17,15 @@ import time
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
+from pyproj import Transformer
 
 
 DATASET_ID = "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL"
 EMBEDDING_BANDS = [f"A{i:02d}" for i in range(64)]
 ACTIVE_TASK_STATES = {"READY", "RUNNING"}
 
-DEFAULT_POINTS_DIR = Path(r"E:\TreeCenteredModelInputs\tree_centered_sentinel_missing_raw15day")
-DEFAULT_COMPLETED_DIR = Path(r"E:\TreeCenterSatelliteEmbedding")
 DEFAULT_DRIVE_FOLDER = "GEE_TREE_CENTERED_SATELLITE_EMBEDDING"
-DEFAULT_MANIFEST = Path("dataCollection/satellite_embedding_tree_centered_export_manifest.jsonl")
 DEFAULT_DESCRIPTION_PREFIX = "tree_centered_satellite_embedding"
 
 POINT_PROPERTY_COLUMNS = [
@@ -47,11 +45,13 @@ ee = None
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--points-dir", type=Path, default=DEFAULT_POINTS_DIR)
-    parser.add_argument("--points-file", type=Path)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--crop-root", type=Path, help="Root containing one final NAIP crop-metadata directory per city.")
+    source.add_argument("--points-file", type=Path, help="Prepared crown-cell CSV for a single city.")
+    parser.add_argument("--metadata-pattern", default="*_tree_id_centered_nearest_64px_metadata.csv")
     parser.add_argument("--city-token", action="append", default=None)
     parser.add_argument("--exclude-city-token", action="append", default=[])
-    parser.add_argument("--completed-dir", type=Path, default=DEFAULT_COMPLETED_DIR)
+    parser.add_argument("--completed-dir", type=Path, help="Optional directory containing already-downloaded exports.")
     parser.add_argument("--drive-folder", default=DEFAULT_DRIVE_FOLDER)
     parser.add_argument("--description-prefix", default=DEFAULT_DESCRIPTION_PREFIX)
     parser.add_argument("--years", nargs="+", type=int, default=[2021, 2022, 2023])
@@ -69,7 +69,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--tile-scale", type=int, default=4)
-    parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+    parser.add_argument("--manifest", type=Path, required=True, help="Runtime JSONL submission ledger (generated; do not commit).")
     parser.add_argument("--project", default=os.getenv("GEE_PROJECT"))
     parser.add_argument("--limit-batches", type=int)
     parser.add_argument("--dry-run", action="store_true")
@@ -104,14 +104,13 @@ def discover_sources(args: argparse.Namespace) -> list[dict[str, object]]:
         if not args.points_file.exists():
             raise FileNotFoundError(args.points_file)
         city = normalize_token(args.city_token[0] if args.city_token else args.points_file.parent.name)
-        return [{"city": city, "points_file": args.points_file}]
-    if not args.points_dir.exists():
-        raise FileNotFoundError(args.points_dir)
+        return [{"city": city, "source_file": args.points_file, "prepared": True}]
+    if not args.crop_root.exists():
+        raise FileNotFoundError(args.crop_root)
 
     selected = None if args.city_token is None else {normalize_token(v) for v in args.city_token if str(v).strip()}
     excluded = {normalize_token(v) for v in args.exclude_city_token if str(v).strip()}
-    paths = sorted(args.points_dir.glob("*/*_tree_centered_sentinel_cells_missing_raw15day.csv"))
-    paths.extend(sorted(args.points_dir.glob("*_tree_centered_sentinel_cells_missing_raw15day.csv")))
+    paths = sorted(args.crop_root.glob(f"*/{args.metadata_pattern}"))
     sources: list[dict[str, object]] = []
     seen: set[Path] = set()
     for path in paths:
@@ -120,17 +119,62 @@ def discover_sources(args: argparse.Namespace) -> list[dict[str, object]]:
             continue
         seen.add(resolved)
         city = normalize_token(path.parent.name)
-        match = re.match(r"(.+?)_tree_centered_sentinel_cells_missing_raw15day$", path.stem)
-        if match:
-            city = normalize_token(match.group(1))
         if selected is not None and city not in selected:
             continue
         if city in excluded:
             continue
-        sources.append({"city": city, "points_file": path})
+        sources.append({"city": city, "source_file": path, "prepared": False})
     if not sources:
-        raise FileNotFoundError(f"No missing-cell CSVs found under {args.points_dir}")
+        raise FileNotFoundError(f"No crop metadata matching {args.metadata_pattern!r} found under {args.crop_root}")
     return sources
+
+
+def crown_cell_points(metadata: pd.DataFrame) -> pd.DataFrame:
+    """Return one export point for each unique crown-centered 10 m cell."""
+    required = {"crown_x_utm", "crown_y_utm", "crown_epsg"}
+    missing = sorted(required.difference(metadata.columns))
+    if missing:
+        raise ValueError(f"Crop metadata missing required columns: {missing}")
+    pieces: list[pd.DataFrame] = []
+    for epsg_value, group in metadata.groupby("crown_epsg", sort=False):
+        epsg = int(epsg_value)
+        x = pd.to_numeric(group["crown_x_utm"], errors="coerce").to_numpy(dtype=np.float64)
+        y = pd.to_numeric(group["crown_y_utm"], errors="coerce").to_numpy(dtype=np.float64)
+        valid = np.isfinite(x) & np.isfinite(y)
+        if not valid.any():
+            continue
+        group = group.loc[valid]
+        x, y = x[valid], y[valid]
+        col = np.floor(x / 10.0).astype(np.int64)
+        row = np.floor(y / 10.0).astype(np.int64)
+        center_x, center_y = col * 10.0 + 5.0, row * 10.0 + 5.0
+        lon, lat = Transformer.from_crs(f"EPSG:{epsg}", "EPSG:4326", always_xy=True).transform(center_x, center_y)
+        pieces.append(pd.DataFrame({
+            "reduced_id": group["tree_id"].to_numpy() if "tree_id" in group else group.index.to_numpy(),
+            "row_index": group["row_index"].to_numpy() if "row_index" in group else group.index.to_numpy(),
+            "crown_cell_id": [f"epsg{epsg}_c{c}_r{r}" for c, r in zip(col, row)],
+            "crown_cell_epsg": epsg,
+            "crown_cell_col": col,
+            "crown_cell_row": row,
+            "longitude": np.asarray(lon, dtype=np.float64),
+            "latitude": np.asarray(lat, dtype=np.float64),
+        }))
+    if not pieces:
+        raise ValueError("No valid crown coordinates were found.")
+    points = pd.concat(pieces, ignore_index=True)
+    counts = points.groupby("crown_cell_id").size().rename("tree_centered_record_count")
+    return points.drop_duplicates("crown_cell_id").merge(counts, on="crown_cell_id", how="left")
+
+
+def load_points(source: dict[str, object]) -> pd.DataFrame:
+    path = Path(source["source_file"])
+    frame = pd.read_csv(path, low_memory=False)
+    if bool(source["prepared"]):
+        missing = sorted({"longitude", "latitude"}.difference(frame.columns))
+        if missing:
+            raise ValueError(f"{path} missing required columns: {missing}")
+        return frame
+    return crown_cell_points(frame)
 
 
 def load_submitted_keys(manifest_path: Path) -> set[str]:
@@ -154,8 +198,8 @@ def append_manifest(manifest_path: Path, record: dict[str, object]) -> None:
         handle.write(json.dumps(record, sort_keys=True) + "\n")
 
 
-def completed_output_exists(completed_dir: Path, export_prefix: str) -> bool:
-    if not completed_dir.exists():
+def completed_output_exists(completed_dir: Path | None, export_prefix: str) -> bool:
+    if completed_dir is None or not completed_dir.exists():
         return False
     return any(completed_dir.glob(f"{export_prefix}*.csv"))
 
@@ -318,27 +362,21 @@ def run_city(
     task_gate: TaskCapacityGate | None,
 ) -> tuple[int, int, int]:
     city = str(source["city"])
-    points_file = Path(source["points_file"])
-    columns = pd.read_csv(points_file, nrows=0).columns.tolist()
-    missing = [column for column in ("longitude", "latitude") if column not in columns]
-    if missing:
-        raise ValueError(f"{points_file} missing required columns: {missing}")
-    use_columns = [column for column in POINT_PROPERTY_COLUMNS if column in columns]
-    if "longitude" not in use_columns:
-        use_columns.append("longitude")
-    if "latitude" not in use_columns:
-        use_columns.append("latitude")
+    source_file = Path(source["source_file"])
+    point_frame = load_points(source)
+    use_columns = [column for column in POINT_PROPERTY_COLUMNS if column in point_frame.columns]
 
     submitted_now = 0
     skipped_completed = 0
     planned = 0
-    for batch_index, chunk in enumerate(pd.read_csv(points_file, usecols=use_columns, chunksize=args.batch_size, low_memory=False)):
+    for batch_index, start in enumerate(range(0, len(point_frame), args.batch_size)):
+        chunk = point_frame.iloc[start : start + args.batch_size][use_columns]
         if args.limit_batches is not None and batch_index >= args.limit_batches:
             break
         print(f"{city}: batch {batch_index:05d}; rows={len(chunk):,}", flush=True)
         points = None
         for year in args.years:
-            key = f"{points_file.name}|{year}|{batch_index}"
+            key = f"{city}|{year}|{batch_index}"
             prefix = export_name(args.description_prefix, city, year, batch_index)
             if completed_output_exists(args.completed_dir, prefix):
                 print(f"{city}: skipping local completed CSV: {prefix}.csv", flush=True)
@@ -363,7 +401,7 @@ def run_city(
                 {
                     "key": key,
                     "city": city,
-                    "source_csv": str(points_file),
+                    "source_name": source_file.name,
                     "year": int(year),
                     "batch_index": int(batch_index),
                     "batch_size": int(args.batch_size),
@@ -386,17 +424,17 @@ def main() -> int:
     sources = discover_sources(args)
     submitted_keys = load_submitted_keys(args.manifest)
     task_gate = None if args.dry_run else TaskCapacityGate(args.max_active_tasks, args.task_poll_seconds, args.task_list_limit)
-    print(f"Discovered {len(sources):,} missing tree-centered embedding point source(s)", flush=True)
+    print(f"Discovered {len(sources):,} crown-centered embedding source(s)", flush=True)
     print(f"Years: {', '.join(str(year) for year in args.years)}", flush=True)
     print(f"Drive folder: {args.drive_folder}", flush=True)
-    print(f"Completed output check: {args.completed_dir}", flush=True)
+    print(f"Completed output check: {args.completed_dir or 'disabled'}", flush=True)
     print(f"Manifest: {args.manifest}", flush=True)
 
     total_planned = 0
     total_submitted = 0
     total_skipped = 0
     for index, source in enumerate(sources, start=1):
-        print(f"[{index:,}/{len(sources):,}] {source['city']}: {source['points_file']}", flush=True)
+        print(f"[{index:,}/{len(sources):,}] {source['city']}: {source['source_file']}", flush=True)
         planned, submitted, skipped = run_city(source, args, submitted_keys, task_gate)
         total_planned += planned
         total_submitted += submitted

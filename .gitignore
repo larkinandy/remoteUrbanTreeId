@@ -57,6 +57,15 @@
 !/dataCollectionPreprocessing/Shard/provenance/
 !/dataCollectionPreprocessing/Shard/provenance/**
 
+/dataCollectionPreprocessing/satelliteEmbeddings/*.csv
+/dataCollectionPreprocessing/satelliteEmbeddings/*.json
+/dataCollectionPreprocessing/satelliteEmbeddings/*.jsonl
+/dataCollectionPreprocessing/satelliteEmbeddings/**/*.csv
+/dataCollectionPreprocessing/satelliteEmbeddings/**/*.json
+/dataCollectionPreprocessing/satelliteEmbeddings/**/*.jsonl
+!/dataCollectionPreprocessing/satelliteEmbeddings/provenance/
+!/dataCollectionPreprocessing/satelliteEmbeddings/provenance/**
+
 # ignore generated figures and model outputs
 /figure_scripts/
 /outputs/

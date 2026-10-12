@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
-"""Derive clean tree-id-centered GEE/Satlas embedding sidecars.
+"""Derive clean tree-id-centered Google Satellite Embedding sidecars.
 
 The clean tree-centered dataset is anchored on matched crown coordinates, not
 the original inventory coordinate. This script computes the crown-centered
-10 m cell for each clean crop row, then fills satellite embeddings from:
-
-1. Supplemental/tree-centered embedding CSVs keyed to crown_cell_id.
-2. Original embedding CSVs only when their latitude/longitude matches the
-   crown-centered cell coordinate after rounding.
-
-The output row order follows the clean NAIP crop metadata exactly.
+10 m cell for each clean crop row, then joins the annual crown-cell exports by
+``crown_cell_id``. The output row order follows the clean NAIP crop metadata
+exactly.
 """
 
 from __future__ import annotations
@@ -26,11 +22,6 @@ import numpy as np
 import pandas as pd
 from pyproj import Transformer
 
-
-DEFAULT_CROP_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean")
-DEFAULT_ORIGINAL_EMBEDDING_ROOT = Path(r"E:\TreeId\SatelliteEmbedding")
-DEFAULT_SUPPLEMENTAL_EMBEDDING_ROOT = Path(r"E:\TreeCenterSatelliteEmbedding")
-DEFAULT_OUTPUT_DIR = Path(r"H:\TreeCenteredModelInputs\tree_centered_gee_inputs_clean")
 
 EMBEDDING_COLUMNS = [f"A{i:02d}" for i in range(64)]
 EMBEDDING_YEARS = [2021, 2022, 2023]
@@ -66,15 +57,13 @@ CITY_ALIASES = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--crop-root", type=Path, default=DEFAULT_CROP_ROOT)
-    parser.add_argument("--original-embedding-root", type=Path, default=DEFAULT_ORIGINAL_EMBEDDING_ROOT)
-    parser.add_argument("--supplemental-embedding-root", type=Path, default=DEFAULT_SUPPLEMENTAL_EMBEDDING_ROOT)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--crop-root", type=Path, required=True)
+    parser.add_argument("--embedding-root", type=Path, required=True, help="Downloaded crown-centered annual export CSVs.")
+    parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--city-token", action="append", default=[])
     parser.add_argument("--exclude-city-token", action="append", default=[])
     parser.add_argument("--metadata-pattern", default="*_tree_id_centered_nearest_64px_metadata.csv")
-    parser.add_argument("--original-pattern", default="mccoy_satellite_embedding_*_{year}_batch_*.csv")
-    parser.add_argument("--supplemental-pattern", default="tree_centered_satellite_embedding_{city}_{year}_batch_*.csv")
+    parser.add_argument("--embedding-pattern", default="tree_centered_satellite_embedding_{city}_{year}_batch_*.csv")
     parser.add_argument("--embedding-years", default="2021,2022,2023")
     parser.add_argument("--coordinate-decimals", type=int, default=7)
     parser.add_argument("--parallel-workers", type=int, default=1)
@@ -239,25 +228,13 @@ def embedding_quality_array(values: np.ndarray, mask: np.ndarray, years: list[in
     return np.nan_to_num(quality, nan=1.0, posinf=1.0, neginf=0.0)
 
 
-def eligible_supplemental_files(args: argparse.Namespace, city: str, years: list[int]) -> list[tuple[Path, int]]:
+def eligible_embedding_files(args: argparse.Namespace, city: str, years: list[int]) -> list[tuple[Path, int]]:
     files: list[tuple[Path, int]] = []
-    root = Path(args.supplemental_embedding_root)
+    root = Path(args.embedding_root)
     for year in years:
-        pattern = args.supplemental_pattern.format(city=city, year=year)
+        pattern = args.embedding_pattern.format(city=city, year=year)
         for path in sorted(root.glob(pattern)):
             files.append((path, year))
-    return files
-
-
-def eligible_original_files(args: argparse.Namespace, city: str, years: list[int]) -> list[tuple[Path, int]]:
-    files: list[tuple[Path, int]] = []
-    root = Path(args.original_embedding_root)
-    variants = display_city_variants(city)
-    for year in years:
-        for path in sorted(root.glob(args.original_pattern.format(year=year))):
-            name_norm = norm_city(path.name)
-            if any(norm_city(v) in name_norm for v in variants):
-                files.append((path, year))
     return files
 
 
@@ -351,18 +328,10 @@ def process_city(city: str, args: argparse.Namespace) -> dict[str, Any]:
         flush=True,
     )
 
-    supplemental_lookup, supplemental_stats = load_embedding_lookup(
+    embedding_lookup, embedding_stats = load_embedding_lookup(
         city,
-        "supplemental",
-        eligible_supplemental_files(args, city, years),
-        unique_cells,
-        years,
-        int(args.coordinate_decimals),
-    )
-    original_lookup, original_stats = load_embedding_lookup(
-        city,
-        "original",
-        eligible_original_files(args, city, years),
+        "crown-centered",
+        eligible_embedding_files(args, city, years),
         unique_cells,
         years,
         int(args.coordinate_decimals),
@@ -377,22 +346,15 @@ def process_city(city: str, args: argparse.Namespace) -> dict[str, Any]:
 
     print(
         f"{city}: assigning embeddings to {len(metadata):,} crop row(s); "
-        f"original_cells={len(original_lookup):,}; supplemental_cells={len(supplemental_lookup):,}",
+        f"exported_cells={len(embedding_lookup):,}",
         flush=True,
     )
     crown_ids = cells["crown_cell_id"].astype(str).to_numpy()
     for row, cell_id in enumerate(crown_ids):
-        # Prefer exact crown-cell supplemental exports. Original exports are
-        # only used when their coordinate matches the crown-centered cell.
-        vectors_by_year = supplemental_lookup.get(cell_id)
+        vectors_by_year = embedding_lookup.get(cell_id)
         if vectors_by_year:
             source_code[row] = 2
             used_supplemental[row] = True
-        else:
-            vectors_by_year = original_lookup.get(cell_id)
-            if vectors_by_year:
-                source_code[row] = 1
-                used_original[row] = True
         if not vectors_by_year:
             continue
         for year, vector in vectors_by_year.items():
@@ -409,12 +371,11 @@ def process_city(city: str, args: argparse.Namespace) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
         "city_token": city,
-        "crop_metadata": str(metadata_path),
-        "original_embedding_root": str(args.original_embedding_root),
-        "supplemental_embedding_root": str(args.supplemental_embedding_root),
+        "crop_metadata_name": metadata_path.name,
+        "embedding_source": "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL",
         "embedding_years": years,
         "coordinate_decimals": int(args.coordinate_decimals),
-        "join_policy": "crown-centered 10m cell; supplemental by crown_cell_id, original fallback by rounded crown-cell center lat/lon",
+        "join_policy": "direct crown-centered 10 m cell join by crown_cell_id",
     }
     np.savez_compressed(
         out_path,
@@ -444,7 +405,7 @@ def process_city(city: str, args: argparse.Namespace) -> dict[str, Any]:
     print(
         f"{city}: wrote {out_path}; rows={len(metadata):,}; "
         f"missing={missing_count:,} ({missing_count / max(len(metadata), 1):.2%}); "
-        f"original_cells={original_stats['matched_cells']:,}; supplemental_cells={supplemental_stats['matched_cells']:,}; "
+        f"exported_cells={embedding_stats['matched_cells']:,}; "
         f"elapsed={elapsed:.1f}s",
         flush=True,
     )
@@ -457,15 +418,16 @@ def process_city(city: str, args: argparse.Namespace) -> dict[str, Any]:
         "missing_satellite_embedding_pct": float(missing_count / max(len(metadata), 1) * 100.0),
         "used_original_rows": int(used_original.sum()),
         "used_supplemental_rows": int(used_supplemental.sum()),
-        "original_matched_cells": int(original_stats["matched_cells"]),
-        "supplemental_matched_cells": int(supplemental_stats["matched_cells"]),
+        "exported_matched_cells": int(embedding_stats["matched_cells"]),
         "elapsed_sec": float(elapsed),
-        "output": str(out_path),
+        "output_name": out_path.name,
     }
 
 
 def main() -> int:
     args = parse_args()
+    if not Path(args.embedding_root).is_dir():
+        raise FileNotFoundError(f"Embedding export directory does not exist: {args.embedding_root}")
     selected = [norm_city(city) for city in args.city_token] if args.city_token else discover_cities(Path(args.crop_root), args.metadata_pattern)
     excluded = {norm_city(city) for city in args.exclude_city_token}
     cities = [city for city in selected if city not in excluded]
