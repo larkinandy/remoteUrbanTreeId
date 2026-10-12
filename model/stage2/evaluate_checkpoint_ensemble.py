@@ -3,8 +3,8 @@
 
 The script recreates the clean shard split from the checkpoint/run args,
 loads the selected checkpoints at once, averages their softmax probabilities,
-optionally applies a fixed probability-sum collapse, and writes ensemble
-metrics and prediction exports.
+applies the frozen checksum-validated probability-sum collapse, and writes
+both `k11` and `collapsed_k6` metrics and prediction exports.
 """
 
 from __future__ import annotations
@@ -25,33 +25,24 @@ for module_dir in (HERE, DISCRIMINATOR_DIR):
     if str(module_dir) not in sys.path:
         sys.path.insert(0, str(module_dir))
 
-import evaluation_runtime as prune
-import train_fixed_partition_classifier as k6
+import evaluation_support as runtime
+import train_fixed_partition_classifier as stage2
 import train_taxon_discriminator as clean_disc
 import clean_mmap_loader
-
-
-CLEAN_ROOT = Path(r"H:\TreeCenteredModelInputs")
-DEFAULT_OUTPUT_DIR = CLEAN_ROOT / "ensemble_diagnostics_clean"
+import artifacts
+import checkpointing
+import cli as stage2_cli
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse portable ensemble-evaluation arguments."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--model-run-dir", type=Path, required=True)
     parser.add_argument("--checkpoint", action="append", type=Path, default=None)
     parser.add_argument("--top-k", type=int, default=5, help="Use this many checkpoints from top_checkpoints.csv when --checkpoint is omitted.")
-    parser.add_argument("--complete-shard-root", type=Path, default=CLEAN_ROOT / "tree_centered_complete_sharded100k_clean")
-    parser.add_argument("--complete-shard-pattern", default="*_part*_tree_centered_complete_inputs.npz")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    stage2_cli.add_shard_io_arguments(parser)
     parser.add_argument("--run-name", default=None)
-    parser.add_argument("--grouping-scheme", choices=("species_partition", "species_k6", "genus_k6"), default="species_partition")
-    parser.add_argument("--species-partition", type=Path, default=k6.DEFAULT_MANUSCRIPT_PARTITION)
-    parser.add_argument(
-        "--split-manifest", type=Path, default=None,
-        help="Optional override for the inherited train/validation/test split manifest saved in the checkpoint.",
-    )
-    parser.add_argument("--species-k6-partition", type=Path, default=k6.DEFAULT_SPECIES_K6)
-    parser.add_argument("--genus-k6-partition", type=Path, default=k6.DEFAULT_GENUS_K6)
+    stage2_cli.add_split_manifest_argument(parser, required=True)
     parser.add_argument("--city-token", action="append", default=None)
     parser.add_argument("--exclude-city-token", action="append", default=[])
     parser.add_argument("--split", choices=("val", "test", "both"), default="test")
@@ -64,78 +55,57 @@ def parse_args() -> argparse.Namespace:
         help="Optional prepared NPY sidecar root for memory-mapped evaluation.",
     )
     parser.add_argument(
-        "--collapse-map", default=None,
-        help=(
-            "Optional comma-separated one-based destination class for every model class. "
-            "Collapsed probabilities are summed before selecting predictions."
-        ),
+        "--collapse-artifact", type=Path, default=artifacts.FINAL_COLLAPSE,
+        help="Frozen checksum-validated k11-to-k6 probability-sum collapse.",
     )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--export-predictions", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--force", action="store_true")
+    stage2_cli.add_overwrite_argument(parser)
     return parser.parse_args()
 
 
 def checkpoint_paths(args: argparse.Namespace) -> list[Path]:
-    if args.checkpoint:
-        return [Path(path) for path in args.checkpoint]
-    manifest_path = args.model_run_dir / "top_checkpoints" / "top_checkpoints.csv"
-    if manifest_path.exists():
-        frame = pd.read_csv(manifest_path)
-        if "rank" in frame.columns:
-            frame = frame.sort_values("rank")
-        paths = [Path(value) for value in frame["checkpoint"].head(max(int(args.top_k), 1)).tolist()]
-        if paths:
-            return paths
-    best = args.model_run_dir / "best_model.pt"
-    if best.exists():
-        print(f"No top-k checkpoint manifest found; using {best}", flush=True)
-        return [best]
-    raise FileNotFoundError(f"No checkpoints found under {args.model_run_dir}")
+    """Resolve explicit or validation-ranked checkpoints."""
+    return checkpointing.resolve_checkpoint_paths(
+        args.model_run_dir,
+        args.checkpoint,
+        args.top_k,
+    )
 
 
 def tensor_or_none(value: Any) -> np.ndarray | None:
-    return prune.as_numpy(value)
+    """Convert an optional tensor-like checkpoint value to NumPy."""
+    return runtime.as_numpy(value)
 
 
-def model_from_checkpoint(checkpoint: dict[str, Any], run_args: argparse.Namespace, class_count: int, device: Any):
-    model = k6.FixedPartitionClassifier(
-        class_count=class_count,
-        structure_dim=int(tensor_or_none(checkpoint["structure_mean"]).shape[0]),
-        hidden_dim=int(getattr(run_args, "hidden_dim", 128)),
-        dropout=float(getattr(run_args, "dropout", 0.2)),
-        phenology_dim=0 if checkpoint.get("phenology_mean") is None else int(tensor_or_none(checkpoint["phenology_mean"]).shape[0]),
-        raw_sentinel_dim=0 if checkpoint.get("raw_sentinel_mean") is None else int(tensor_or_none(checkpoint["raw_sentinel_mean"]).shape[0]),
-        satellite_embedding_dim=0
-        if checkpoint.get("satellite_embedding_mean") is None
-        else int(tensor_or_none(checkpoint["satellite_embedding_mean"]).shape[0]),
-        prism_normals_dim=0 if checkpoint.get("prism_mean") is None else int(tensor_or_none(checkpoint["prism_mean"]).shape[0]),
-        tree_image_branch_dropout=0.0,
-        use_naip_chm_interaction_branch=bool(getattr(run_args, "use_naip_chm_interaction_branch", False)),
-        independent_naip_crop_pixels=int(getattr(run_args, "image_center_crop_pixels", 0)),
-        interaction_naip_crop_pixels=int(getattr(run_args, "interaction_naip_crop_pixels", 0)),
-        interaction_fusion_mode=str(getattr(run_args, "interaction_fusion_mode", "bilinear_upsample")),
-        interaction_naip_patch_pixels=int(getattr(run_args, "interaction_naip_patch_pixels", 5)),
-        interaction_chm_patch_pixels=int(getattr(run_args, "interaction_chm_patch_pixels", 3)),
-        image_encoder_normalization=str(getattr(run_args, "image_encoder_normalization", "batch")),
-        naip_encoder_normalization=getattr(run_args, "naip_encoder_normalization", None),
-        naip_encoder_architecture=str(getattr(run_args, "naip_encoder_architecture", "compact_cnn")),
-        maestro_model_id=str(getattr(run_args, "maestro_model_id", "BiliSakura/MAESTRO-transformers")),
-        maestro_subfolder=str(getattr(run_args, "maestro_subfolder", "maestro-s2-naip-urban-base")),
-        maestro_revision=str(getattr(run_args, "maestro_revision", "243b1bc253b72980f1bf6f70354c1f84d958105c")),
-        maestro_freeze_backbone=bool(getattr(run_args, "maestro_freeze_backbone", True)),
-        maestro_local_files_only=bool(getattr(run_args, "maestro_local_files_only", False)),
-        chm_encoder_normalization=getattr(run_args, "chm_encoder_normalization", None),
-        interaction_encoder_normalization=str(getattr(run_args, "interaction_encoder_normalization", "batch")),
-        phenology_zero_indices=list(getattr(run_args, "phenology_zero_indices", [])),
-        excluded_modalities=list(getattr(run_args, "exclude_modality", [])),
-    ).to(device)
+def model_from_checkpoint(
+    checkpoint: dict[str, Any],
+    run_args: argparse.Namespace,
+    class_count: int,
+    device: Any,
+) -> Any:
+    """Rebuild one classifier using architecture metadata saved at training."""
+    dimensions = {
+        "structure": int(tensor_or_none(checkpoint["structure_mean"]).shape[0]),
+        "phenology": 0 if checkpoint.get("phenology_mean") is None else int(tensor_or_none(checkpoint["phenology_mean"]).shape[0]),
+        "raw_sentinel": 0 if checkpoint.get("raw_sentinel_mean") is None else int(tensor_or_none(checkpoint["raw_sentinel_mean"]).shape[0]),
+        "satellite_embedding": 0 if checkpoint.get("satellite_embedding_mean") is None else int(tensor_or_none(checkpoint["satellite_embedding_mean"]).shape[0]),
+        "prism_normals": 0 if checkpoint.get("prism_mean") is None else int(tensor_or_none(checkpoint["prism_mean"]).shape[0]),
+    }
+    model = stage2.build_classifier(
+        run_args,
+        class_count,
+        dimensions,
+        device,
+        inference=True,
+    )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     return model
 
 
 def per_group_metrics(y_true: np.ndarray, y_pred: np.ndarray, group_names: list[str]) -> pd.DataFrame:
+    """Calculate support, precision, recall, and F1 for each group."""
     rows: list[dict[str, Any]] = []
     for cls, group in enumerate(group_names):
         true_mask = y_true == cls
@@ -159,14 +129,16 @@ def per_group_metrics(y_true: np.ndarray, y_pred: np.ndarray, group_names: list[
     return pd.DataFrame(rows)
 
 
-def collapsed_metrics(metrics: dict[str, Any], mapping_text: str) -> tuple[dict[str, Any], list[str]]:
-    mapping = np.asarray([int(value.strip()) - 1 for value in mapping_text.split(",")], dtype=np.int64)
+def collapsed_metrics(
+    metrics: dict[str, Any], mapping: np.ndarray, group_names: list[str]
+) -> tuple[dict[str, Any], list[str]]:
+    """Sum k11 probabilities into the frozen collapsed_k6 label space."""
     probabilities = metrics["probabilities"]
     if len(mapping) != probabilities.shape[1]:
-        raise ValueError(f"--collapse-map has {len(mapping)} entries for {probabilities.shape[1]} model classes")
+        raise ValueError(f"Collapse has {len(mapping)} entries for {probabilities.shape[1]} model classes")
     destinations = sorted(np.unique(mapping).tolist())
     if destinations != list(range(len(destinations))):
-        raise ValueError("--collapse-map destinations must be contiguous one-based classes")
+        raise ValueError("Collapse destinations must be contiguous zero-based classes")
     collapsed_probability = np.zeros((len(probabilities), len(destinations)), dtype=np.float32)
     for source, destination in enumerate(mapping):
         collapsed_probability[:, destination] += probabilities[:, source]
@@ -174,11 +146,12 @@ def collapsed_metrics(metrics: dict[str, Any], mapping_text: str) -> tuple[dict[
     predictions = collapsed_probability.argmax(axis=1)
     result = clean_disc.f1_metrics(labels, predictions, len(destinations))
     result.update({"probabilities": collapsed_probability, "labels": labels, "predictions": predictions})
-    return result, [f"collapsed_group{i + 1:02d}" for i in destinations]
+    return result, group_names
 
 
 @clean_disc.train_base.torch.no_grad()
 def evaluate_ensemble(models: list[Any], loader: Any, device: Any, class_count: int) -> dict[str, Any]:
+    """Average checkpoint probabilities and gates over an evaluation loader."""
     torch = clean_disc.train_base.torch
     y_true: list[np.ndarray] = []
     y_pred: list[np.ndarray] = []
@@ -226,6 +199,7 @@ def evaluate_ensemble(models: list[Any], loader: Any, device: Any, class_count: 
 
 
 def main() -> int:
+    """Run validated k11 ensemble inference and collapsed_k6 reporting."""
     args = parse_args()
     if clean_disc.train_base.TORCH_IMPORT_ERROR is not None:
         raise SystemExit(f"PyTorch is required. Original error: {clean_disc.train_base.TORCH_IMPORT_ERROR}")
@@ -234,12 +208,10 @@ def main() -> int:
 
     paths = checkpoint_paths(args)
     checkpoints = [torch.load(path, map_location=device) for path in paths]
-    run_args = prune.runtime_args(args, checkpoints[0])
-    run_args.grouping_scheme = args.grouping_scheme
-    if args.grouping_scheme == "species_partition":
-        run_args.species_partition = args.species_partition
-    if args.split_manifest is not None:
-        run_args.split_manifest = args.split_manifest
+    artifacts.load_grouping_manifest()
+    artifacts.validate_split_manifest(args.split_manifest)
+    run_args = runtime.runtime_args(args, checkpoints[0])
+    run_args.split_manifest = args.split_manifest
     run_args.image_augmentation = False
     run_args.tree_image_channel_dropout = 0.0
     run_args.tree_image_branch_dropout = 0.0
@@ -250,11 +222,19 @@ def main() -> int:
 
     run_name = args.run_name or f"{args.model_run_dir.name}_{args.split}_top{len(paths)}_ensemble"
     out_dir = args.output_dir / run_name
-    if out_dir.exists() and any(out_dir.iterdir()) and not args.force:
-        raise SystemExit(f"Output directory exists and is not empty: {out_dir}; pass --force.")
+    if out_dir.exists() and any(out_dir.iterdir()) and not args.overwrite:
+        raise SystemExit(f"Output directory exists and is not empty: {out_dir}; pass --overwrite.")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest, shard_paths, group_names = prune.build_manifest(args, run_args)
+    manifest, shard_paths, group_names = runtime.build_manifest(args, run_args)
+    current_schema_sha256 = artifacts.npz_schema_sha256(next(iter(shard_paths.values())))
+    current_provenance = artifacts.provenance(args.split_manifest, current_schema_sha256)
+    for path, checkpoint in zip(paths, checkpoints):
+        artifacts.validate_checkpoint_provenance(
+            checkpoint,
+            current_provenance,
+            checkpoint_name=str(path),
+        )
     splits = ["val", "test"] if args.split == "both" else [args.split]
     eval_manifest = manifest.loc[manifest["split"].isin(splits)].reset_index(drop=True)
     if args.max_eval_samples > 0 and len(eval_manifest) > args.max_eval_samples:
@@ -296,18 +276,16 @@ def main() -> int:
         tensor_or_none(first.get("prism_std")),
         run_args,
     )
-    loader = prune.make_loader(ds, args)
+    loader = runtime.make_loader(ds, args)
     models = [model_from_checkpoint(checkpoint, run_args, len(group_names), device) for checkpoint in checkpoints]
     metrics = evaluate_ensemble(models, loader, device, len(group_names))
     per_group = per_group_metrics(metrics["labels"], metrics["predictions"], group_names)
     per_group.to_csv(out_dir / "ensemble_per_group_metrics.csv", index=False)
-    collapsed = None
-    collapsed_group_names = None
-    if args.collapse_map:
-        collapsed, collapsed_group_names = collapsed_metrics(metrics, args.collapse_map)
-        per_group_metrics(collapsed["labels"], collapsed["predictions"], collapsed_group_names).to_csv(
-            out_dir / "ensemble_collapsed_per_group_metrics.csv", index=False,
-        )
+    collapse_mapping, collapsed_group_names = artifacts.load_collapse(args.collapse_artifact)
+    collapsed, collapsed_group_names = collapsed_metrics(metrics, collapse_mapping, collapsed_group_names)
+    per_group_metrics(collapsed["labels"], collapsed["predictions"], collapsed_group_names).to_csv(
+        out_dir / "ensemble_collapsed_per_group_metrics.csv", index=False,
+    )
     modality_names = list(models[0].modality_names)
     gate_weights = metrics["gate_weights"]
     gate_summary = pd.DataFrame(
@@ -332,16 +310,17 @@ def main() -> int:
         "macro_f1": float(metrics["macro_f1"]),
         "weighted_f1": float(metrics["weighted_f1"]),
         "group_names": group_names,
+        "provenance": current_provenance,
         "args": json.loads(json.dumps(clean_disc.safe_json_args(args), default=str)),
     }
-    if collapsed is not None:
-        summary["collapsed"] = {
-            "collapse_map": args.collapse_map,
-            "group_names": collapsed_group_names,
-            "accuracy": float(collapsed["accuracy"]),
-            "macro_f1": float(collapsed["macro_f1"]),
-            "weighted_f1": float(collapsed["weighted_f1"]),
-        }
+    summary["collapsed"] = {
+        "collapse_artifact": str(args.collapse_artifact),
+        "collapse_map_zero_based": collapse_mapping.tolist(),
+        "group_names": collapsed_group_names,
+        "accuracy": float(collapsed["accuracy"]),
+        "macro_f1": float(collapsed["macro_f1"]),
+        "weighted_f1": float(collapsed["weighted_f1"]),
+    }
     (out_dir / "ensemble_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     pd.DataFrame([summary | {"group_names": ",".join(group_names), "checkpoints": "|".join(str(p) for p in paths)}]).to_csv(
         out_dir / "ensemble_summary.csv",
@@ -359,10 +338,10 @@ def main() -> int:
             group_names=np.asarray(group_names, dtype="<U64"),
             gate_weights=metrics["gate_weights"],
             modality_names=np.asarray(modality_names, dtype="<U64"),
-            collapsed_probabilities=np.empty((0, 0), dtype=np.float32) if collapsed is None else collapsed["probabilities"],
-            collapsed_labels=np.empty(0, dtype=np.int64) if collapsed is None else collapsed["labels"],
-            collapsed_predictions=np.empty(0, dtype=np.int64) if collapsed is None else collapsed["predictions"],
-            collapsed_group_names=np.asarray([] if collapsed_group_names is None else collapsed_group_names, dtype="<U64"),
+            collapsed_probabilities=collapsed["probabilities"],
+            collapsed_labels=collapsed["labels"],
+            collapsed_predictions=collapsed["predictions"],
+            collapsed_group_names=np.asarray(collapsed_group_names, dtype="<U64"),
         )
     print(
         f"Finished ensemble: acc={metrics['accuracy']:.4f}; macro_f1={metrics['macro_f1']:.4f}; "

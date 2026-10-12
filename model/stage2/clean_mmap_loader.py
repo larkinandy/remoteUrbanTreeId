@@ -21,6 +21,7 @@ torch = clean.train_base.torch
 
 @dataclass
 class MmapShardArrays:
+    """Memory-mapped arrays belonging to one prepared source shard."""
     path: Path
     crops: np.ndarray
     chm: np.ndarray
@@ -36,29 +37,36 @@ class MmapShardArrays:
 class MmapShardStore:
     """Open standalone NPY sidecars lazily; OS page cache is shared by workers."""
 
-    def __init__(self, source_paths: dict[str, Path], prepared_root: Path):
+    def __init__(self, source_paths: dict[str, Path], prepared_root: Path) -> None:
+        """Index relocatable sidecar manifests for the requested source shards."""
         self.source_paths = dict(source_paths)
         self.prepared_root = Path(prepared_root).resolve()
         self.sidecars = self._discover()
         self.cache: dict[str, MmapShardArrays] = {}
 
     def _discover(self) -> dict[str, dict[str, str]]:
-        by_source: dict[str, dict[str, str]] = {}
+        """Match source shards to complete raster and vector sidecar sets."""
+        by_source_name: dict[str, dict[str, str]] = {}
         raster_manifests = list(self.prepared_root.rglob("*_prepared_rasters_manifest.json"))
         vector_manifests = list(self.prepared_root.rglob("*_mmap_vectors_manifest.json"))
         for path, kind in [(p, "raster") for p in raster_manifests] + [(p, "vector") for p in vector_manifests]:
             payload = json.loads(path.read_text(encoding="utf-8"))
-            source = str(Path(payload["source_shard"]).resolve()).lower()
-            entry = by_source.setdefault(source, {})
+            source_name = Path(payload["source_shard"]).name.lower()
+            entry = by_source_name.setdefault(source_name, {})
             if kind in entry:
-                raise RuntimeError(f"Duplicate {kind} sidecar manifest for {source}")
+                raise RuntimeError(f"Duplicate {kind} sidecar manifest for {source_name}")
             entry[kind] = str(path)
-            entry.update(payload["outputs"])
+            for output_name, output_value in payload["outputs"].items():
+                recorded_path = Path(output_value)
+                relocated_path = path.parent / recorded_path.name
+                entry[output_name] = str(
+                    recorded_path if recorded_path.exists() else relocated_path
+                )
         result: dict[str, dict[str, str]] = {}
         missing: list[str] = []
         for key, source_path in self.source_paths.items():
-            source = str(Path(source_path).resolve()).lower()
-            entry = by_source.get(source)
+            source_name = Path(source_path).name.lower()
+            entry = by_source_name.get(source_name)
             required = {
                 "raster", "vector", "naip", "chm_independent", "chm_interaction",
                 "tree_centered_naip_chm_structure", "sentinel_phenology",
@@ -74,17 +82,26 @@ class MmapShardStore:
         print(f"Prepared mmap sidecars verified: shards={len(result):,}; root={self.prepared_root}", flush=True)
         return result
 
-    def __getstate__(self):
-        state = self.__dict__.copy(); state["cache"] = {}; return state
+    def __getstate__(self) -> dict[str, Any]:
+        """Drop live array handles when sent to worker processes."""
+        state = self.__dict__.copy()
+        state["cache"] = {}
+        return state
 
     def get(self, source_key: str) -> MmapShardArrays:
+        """Open and validate one shard's arrays on first access."""
         if source_key in self.cache:
             return self.cache[source_key]
         paths = self.sidecars[source_key]
-        load = lambda name: np.load(paths[name], mmap_mode="r")
+        def load(name: str) -> np.ndarray:
+            """Open one non-object NPY sidecar read-only."""
+            return np.load(paths[name], mmap_mode="r", allow_pickle=False)
+
         arrays = MmapShardArrays(
-            path=self.source_paths[source_key], crops=load("naip"),
-            chm=load("chm_independent"), chm_interaction=load("chm_interaction"),
+            path=self.source_paths[source_key],
+            crops=load("naip"),
+            chm=load("chm_independent"),
+            chm_interaction=load("chm_interaction"),
             structure=load("tree_centered_naip_chm_structure"),
             sentinel_phenology=load("sentinel_phenology"),
             sentinel_sequence=load("sentinel_sequence"),
@@ -99,6 +116,7 @@ class MmapShardStore:
         return arrays
 
     def clear(self) -> None:
+        """Release cached memory-map handles."""
         self.cache.clear()
 
 
@@ -106,6 +124,7 @@ class MmapTreeDataset(clean.CleanTreeDataset):
     """Build the same tensors as CleanTreeDataset from physically prepared arrays."""
 
     def _build_item(self, index: int) -> dict[str, Any]:
+        """Construct one tensor record using the same transforms as the NPZ loader."""
         source_key = self.source_keys[index]
         row = int(self.local_rows[index])
         arrays = self.store.get(source_key)
@@ -140,7 +159,8 @@ class MmapTreeDataset(clean.CleanTreeDataset):
             value = self._normalize_vector(arrays.sentinel_phenology[row], self.phenology_mean, self.phenology_std)
             zero_indices = tuple(int(x) for x in getattr(self.args, "phenology_zero_indices", ()))
             if zero_indices:
-                value = value.copy(); value[list(zero_indices)] = 0.0
+                value = value.copy()
+                value[list(zero_indices)] = 0.0
             item["sentinel_phenology"] = torch.from_numpy(value)
         if self.raw_sentinel_mean is not None:
             seq = np.asarray(arrays.sentinel_sequence[row], dtype=np.float32)
