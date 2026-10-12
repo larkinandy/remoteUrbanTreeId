@@ -1,0 +1,5 @@
+{
+  "final_sidecar_inventory_complete": true,
+  "raw_gee_export_inventory_complete": false,
+  "note": "Final sidecars were inventoried with SHA-256. The historical raw GEE export volume was not mounted during repository cleanup; preserve and inventory it separately when available."
+}

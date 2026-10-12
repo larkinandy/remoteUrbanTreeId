@@ -15,7 +15,6 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 import math
 from pathlib import Path
-import sys
 import time
 from typing import Any
 
@@ -23,20 +22,9 @@ import numpy as np
 import pandas as pd
 from pyproj import Transformer
 
-HERE = Path(__file__).resolve().parent
-SHARD_SCRIPTS = HERE.parents[1] / "dataCollectionPreprocessing" / "Shard"
-if str(SHARD_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SHARD_SCRIPTS))
-
-import assemble_clean_tree_id_centered_model_input_shards as shard_schema
 import sentinel_phenology_metrics as derived_metrics
+from sentinel_schema import SENTINEL_SEQUENCE_COLUMNS
 
-
-DEFAULT_CROP_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean")
-DEFAULT_CLEAN_SENTINEL_LINK_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_record_metadata_clean")
-DEFAULT_ORIGINAL_TIMESERIES_ROOT = Path(r"E:\cell\sentinel2_timeseries")
-DEFAULT_SUPPLEMENTAL_TIMESERIES_ROOT = Path(r"E:\TreeCenteredModelInputs\tree_centered_sentinel_timeseries_supplemental")
-DEFAULT_OUTPUT_DIR = Path(r"H:\TreeCenteredModelInputs\tree_centered_sentinel_phenology_clean")
 
 COORD_SCALE = 10_000_000
 EARTH_RADIUS_M = 6_371_008.8
@@ -64,16 +52,10 @@ CITY_ALIASES = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--crop-root", type=Path, default=DEFAULT_CROP_ROOT)
-    parser.add_argument(
-        "--clean-sentinel-link-root",
-        type=Path,
-        default=DEFAULT_CLEAN_SENTINEL_LINK_ROOT,
-        help="Deprecated; retained for command compatibility. Clean linkage is derived from tree_id crop metadata rows.",
-    )
-    parser.add_argument("--original-timeseries-root", type=Path, default=DEFAULT_ORIGINAL_TIMESERIES_ROOT)
-    parser.add_argument("--supplemental-timeseries-root", type=Path, default=DEFAULT_SUPPLEMENTAL_TIMESERIES_ROOT)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--crop-root", type=Path, required=True)
+    parser.add_argument("--original-timeseries-root", type=Path, required=True)
+    parser.add_argument("--supplemental-timeseries-root", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--city-token", action="append", default=[])
     parser.add_argument("--exclude-city-token", action="append", default=[])
     parser.add_argument("--parallel-workers", type=int, default=1)
@@ -91,7 +73,7 @@ def parse_args() -> argparse.Namespace:
             "the detected crown rather than the inventory coordinate."
         ),
     )
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
 
@@ -161,7 +143,7 @@ def load_timeseries_source(
 ) -> pd.DataFrame:
     if not files:
         return pd.DataFrame()
-    base_columns = {"latitude", "longitude", "date", *shard_schema.SENTINEL_SEQUENCE_COLUMNS}
+    base_columns = {"latitude", "longitude", "date", *SENTINEL_SEQUENCE_COLUMNS}
     frames: list[pd.DataFrame] = []
     started = time.perf_counter()
     for index, path in enumerate(files, start=1):
@@ -194,7 +176,7 @@ def load_timeseries_source(
 
 
 def ensure_sequence_columns(frame: pd.DataFrame) -> pd.DataFrame:
-    for column in shard_schema.SENTINEL_SEQUENCE_COLUMNS:
+    for column in SENTINEL_SEQUENCE_COLUMNS:
         if column not in frame.columns:
             frame[column] = 0.0
         frame[column] = pd.to_numeric(frame[column], errors="coerce").fillna(0.0)
@@ -217,12 +199,12 @@ def compute_phenology_cache(
     started = time.perf_counter()
     for pos, (key, group) in enumerate(groups, start=1):
         group = group.sort_values("date", kind="stable")
-        values = group[list(shard_schema.SENTINEL_SEQUENCE_COLUMNS)].to_numpy(dtype=np.float32, copy=True)
+        values = group[list(SENTINEL_SEQUENCE_COLUMNS)].to_numpy(dtype=np.float32, copy=True)
         mask = np.ones(values.shape[0], dtype=bool)
         cache[str(key)] = derived_metrics.compute_sentinel_phenology(
             values,
             mask,
-            list(shard_schema.SENTINEL_SEQUENCE_COLUMNS),
+            list(SENTINEL_SEQUENCE_COLUMNS),
             float(outlier_abs),
         ).astype(np.float32)
         if progress_interval and (pos == 1 or pos == total or pos % progress_interval == 0):
@@ -331,7 +313,7 @@ def process_city(city: str, args: argparse.Namespace) -> dict[str, Any]:
     started = time.perf_counter()
     out_dir = Path(args.output_dir) / city
     out_path = out_dir / f"{city}_tree_id_centered_sentinel_phenology.npz"
-    if out_path.exists() and not args.force:
+    if out_path.exists() and not args.overwrite:
         with np.load(out_path, allow_pickle=True) as data:
             missing = int(np.asarray(data["missing_sentinel_phenology"], dtype=bool).sum())
             rows = int(data["sentinel_phenology"].shape[0])
@@ -386,11 +368,10 @@ def process_city(city: str, args: argparse.Namespace) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
         "city_token": city,
-        "crop_metadata": str(crop_path),
-        "clean_sentinel_link_csv": "",
+        "crop_metadata": crop_path.name,
         "linkage_note": "Sentinel cells derived from crop metadata tree_id rows and crown UTM coordinates; old link metadata ignored.",
-        "original_timeseries_root": str(args.original_timeseries_root),
-        "supplemental_timeseries_root": str(args.supplemental_timeseries_root),
+        "original_timeseries_files": [path.name for path in original_files],
+        "supplemental_timeseries_files": [path.name for path in supplemental_files],
         "coordinate_decimals": int(args.coordinate_decimals),
         "max_coordinate_distance_m": float(args.max_coordinate_distance_m),
         "outlier_abs": float(args.outlier_abs),

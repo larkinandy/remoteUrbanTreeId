@@ -43,8 +43,6 @@ DEFAULT_START_DATE = "2021-01-01"
 DEFAULT_END_DATE = "2023-12-31"
 DEFAULT_INTERVAL_DAYS = 30
 DEFAULT_DRIVE_FOLDER = "GEE_TREE_EXPORT"
-DEFAULT_COMPLETED_DIR = Path(r"E:\TreeId\Sentinel2")
-DEFAULT_POINTS_DIR = SCRIPT_DIR / "sentinel_10m_cells"
 DEFAULT_CLOUD_FILTER = 70
 DEFAULT_CLOUD_PROBABILITY_THRESHOLD = 40
 ALBUQUERQUE_TEST_CITY = "Albuquerque"
@@ -101,10 +99,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--points-dir",
         type=Path,
-        default=DEFAULT_POINTS_DIR,
         help=(
-            "Folder containing per-city reduced point folders. Default: "
-            "dataCollectionPreprocessing/Sentinel2/sentinel_10m_cells. Ignored when "
+            "Folder containing per-city reduced point folders. Ignored when "
             "--points-file or --points-asset is supplied."
         ),
     )
@@ -191,7 +187,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--completed-dir",
         type=Path,
-        default=DEFAULT_COMPLETED_DIR,
+        required=True,
         help=(
             "Local folder checked for completed CSV exports before submitting "
             "a matching Earth Engine task."
@@ -227,7 +223,9 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--points-asset requires --city because the city name cannot be inferred")
     if args.points_file and not args.points_file.exists():
         raise FileNotFoundError(f"Local point file does not exist: {args.points_file}")
-    if not args.points_asset and not args.points_file and not args.points_dir.exists():
+    if not args.points_asset and not args.points_file and args.points_dir is None:
+        raise ValueError("Pass --points-dir, --points-file, or --points-asset")
+    if args.points_dir is not None and not args.points_dir.exists():
         raise FileNotFoundError(f"Reduced point directory does not exist: {args.points_dir}")
     if args.batch_size <= 0:
         raise ValueError("--batch-size must be positive")

@@ -2,7 +2,7 @@
 
 This module owns the shared Sentinel-2 raw-band, spectral-index, and completed
 export parsing contract used by the interpolated time-series pipeline. It does
-not write the obsolete fixed-window products under ``E:/cell/sentinel2``.
+does not write obsolete fixed-window products from earlier development runs.
 """
 
 from __future__ import annotations
