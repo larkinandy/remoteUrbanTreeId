@@ -1,43 +1,36 @@
 #!/usr/bin/env python3
-"""Train seven complete-coverage one-city k11 models and evaluate transfer."""
+"""Train the configured one-city k11 models and evaluate national transfer."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
+
+from geographic_utils import collapse_map_string, eligible_city_support, validate_split_manifest
 
 
 ROOT = Path(__file__).resolve().parents[2]
 TRAINER = ROOT / "model" / "stage2" / "train_fixed_partition_classifier.py"
 EVALUATOR = ROOT / "model" / "stage2" / "evaluate_checkpoint_ensemble.py"
-COLLAPSE_MAP = "1,1,2,2,3,3,4,5,3,6,2"
-SOURCE_CITIES = (
-    "denver",
-    "portland",
-    "ranchocucamonga",
-    "sanfrancisco",
-    "sanjose",
-    "seattle",
-    "stlouis",
-)
-TARGET_CITIES = (
-    "atlanta", "auroraco", "baltimore", "buffalo", "capecoral", "columbus",
-    "denver", "gardengrove", "huntingtonbeach", "lasvegas", "louisville",
-    "madison", "newyork", "pittsburgh", "portland", "ranchocucamonga",
-    "sandiego", "sanfrancisco", "sanjose", "seattle", "siouxfalls",
-    "stlouis", "washingtondc",
-)
+DEFAULT_CONFIG = ROOT / "analysis" / "geographic" / "geographic_config.json"
+DEFAULT_GROUPING = ROOT / "config" / "final_grouping.json"
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument("--city", action="append", choices=SOURCE_CITIES, help="Run selected source city; repeat as needed.")
-    p.add_argument("--complete-shard-root", type=Path, default=Path(r"H:\TreeCenteredModelInputs\tree_centered_complete_sharded100k_prism_daily3_clean"))
+    p.add_argument("--city", action="append", help="Run selected configured source city; repeat as needed.")
+    p.add_argument("--complete-shard-root", type=Path, required=True)
     p.add_argument("--species-partition", type=Path, default=ROOT / "config" / "final_k11_partition.npz")
-    p.add_argument("--split-manifest", type=Path, default=ROOT / "artifacts" / "reviewer_stage2_loader_manifest.csv.gz")
-    p.add_argument("--output-root", type=Path, default=Path(r"H:\k11_one_city_seven_source"))
+    p.add_argument("--grouping-config", type=Path, default=DEFAULT_GROUPING)
+    p.add_argument("--geographic-config", type=Path, default=DEFAULT_CONFIG)
+    p.add_argument("--split-manifest", type=Path, required=True)
+    p.add_argument("--reference-test-predictions", type=Path, required=True)
+    p.add_argument("--qa-metadata", type=Path, required=True)
+    p.add_argument("--output-root", type=Path, required=True)
+    p.add_argument("--minimum-test-records", type=int, default=1000)
     p.add_argument("--epochs", type=int, default=120)
     p.add_argument("--early-stopping-patience", type=int, default=12)
     p.add_argument("--batch-size", type=int, default=1024)
@@ -108,7 +101,12 @@ def training_command(a: argparse.Namespace, city: str, run_name: str, model_root
 
 
 def evaluation_command(
-    a: argparse.Namespace, city: str, model_run: Path, result_root: Path, within_city: bool,
+    a: argparse.Namespace,
+    city: str,
+    model_run: Path,
+    result_root: Path,
+    target_cities: tuple[str, ...],
+    within_city: bool,
 ) -> list[str]:
     suffix = "within_city" if within_city else "cross_city_eligible"
     command = [
@@ -119,9 +117,10 @@ def evaluation_command(
         "--grouping-scheme", "species_partition", "--species-partition", str(a.species_partition),
         "--split-manifest", str(a.split_manifest), "--split", "test", "--batch-size", str(a.batch_size),
         "--num-workers", str(a.num_workers), "--max-shard-cache", str(a.max_shard_cache),
-        "--collapse-map", COLLAPSE_MAP, "--device", a.device, "--export-predictions",
+        "--collapse-map", collapse_map_string(a.grouping_config),
+        "--device", a.device, "--export-predictions",
     ]
-    targets = (city,) if within_city else tuple(value for value in TARGET_CITIES if value != city)
+    targets = (city,) if within_city else tuple(value for value in target_cities if value != city)
     for target in targets:
         command.extend(["--city-token", target])
     if a.force:
@@ -131,11 +130,26 @@ def evaluation_command(
 
 def main() -> int:
     a = parse_args()
-    required = (TRAINER, EVALUATOR, a.complete_shard_root, a.species_partition, a.split_manifest)
+    required = (
+        TRAINER, EVALUATOR, a.complete_shard_root, a.species_partition,
+        a.grouping_config, a.geographic_config, a.split_manifest,
+        a.reference_test_predictions, a.qa_metadata,
+    )
     for path in required:
         if not path.exists():
             raise FileNotFoundError(path)
-    cities = a.city or list(SOURCE_CITIES)
+    validate_split_manifest(a.split_manifest, a.geographic_config)
+    configuration = json.loads(a.geographic_config.read_text(encoding="utf-8"))
+    configured_sources = tuple(str(value) for value in configuration["source_cities"])
+    cities = a.city or list(configured_sources)
+    unknown = sorted(set(cities).difference(configured_sources))
+    if unknown:
+        raise SystemExit(f"Cities are not configured one-city sources: {unknown}")
+    target_cities = tuple(
+        eligible_city_support(
+            a.reference_test_predictions, a.qa_metadata, a.minimum_test_records
+        )["city"].tolist()
+    )
     model_root = a.output_root / "models"
     result_root = a.output_root / "results"
     for index, city in enumerate(cities, start=1):
@@ -144,8 +158,8 @@ def main() -> int:
         model_run = model_root / run_name
         jobs = (
             (training_command(a, city, run_name, model_root), model_run / "run_config.json", result_root / "logs" / f"{city}_training.log"),
-            (evaluation_command(a, city, model_run, result_root, True), result_root / f"{city}_within_city_test_top5" / "ensemble_summary.json", result_root / "logs" / f"{city}_within_city_inference.log"),
-            (evaluation_command(a, city, model_run, result_root, False), result_root / f"{city}_cross_city_eligible_test_top5" / "ensemble_summary.json", result_root / "logs" / f"{city}_cross_city_inference.log"),
+            (evaluation_command(a, city, model_run, result_root, target_cities, True), result_root / f"{city}_within_city_test_top5" / "ensemble_summary.json", result_root / "logs" / f"{city}_within_city_inference.log"),
+            (evaluation_command(a, city, model_run, result_root, target_cities, False), result_root / f"{city}_cross_city_eligible_test_top5" / "ensemble_summary.json", result_root / "logs" / f"{city}_cross_city_inference.log"),
         )
         for command, completion_marker, log in jobs:
             if a.dry_run:

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "minimum_qa_screened_test_records_per_city": 1000,
+  "minimum_test_records_per_group_for_macro_f1": 10,
+  "source_cities": [
+    "denver",
+    "portland",
+    "ranchocucamonga",
+    "sanfrancisco",
+    "sanjose",
+    "seattle",
+    "stlouis"
+  ],
+  "grouping_config": "../../config/final_grouping.json",
+  "split_manifest": {
+    "file_name": "reviewer_stage2_loader_manifest.csv.gz",
+    "sha256": "d69b208294779d60fae94f3938fac39735baaf016c7a158be73642141a55bc45",
+    "records": 1851968,
+    "record_key_definition": "city_token|tree_id|crop_index"
+  },
+  "qa_warning_excluded_from_reporting": "qa_flag_low_vegetated_height_with_lidar",
+  "notes": [
+    "Eligible target cities are derived after applying the reporting QA screen.",
+    "The seven source cities contain at least 10 training records for every k11 group.",
+    "All geographic models predict k11; collapsed_k6 probabilities are obtained by the canonical probability-sum mapping."
+  ]
+}

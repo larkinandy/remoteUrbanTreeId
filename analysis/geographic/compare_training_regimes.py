@@ -4,34 +4,28 @@
 from __future__ import annotations
 
 import json
+import argparse
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score
 
-
-PRIMARY = Path("outputs/reviewer_revision/final_pruned_k11_test_top5_ensemble/ensemble_predictions.npz")
-LOCO_ROOT = Path("outputs/reviewer_revision/k11_loco_pruned_v1")
-STLOUIS_TRANSFER = Path(r"H:\k11_one_city_stlouis\results\stlouis_trained_other_cities_test_top5\ensemble_predictions.npz")
-QA = Path("outputs/reviewer_revision/final_pruned_sensitivity_table_with_taxon_provenance/final_test_sensitivity_variables.csv.gz")
-OUTPUT = Path("outputs/reviewer_revision/completed_city_three_regime_comparison")
+from geographic_utils import load_predictions, load_qa_flags, screen_qa
 
 
-def load_predictions(path: Path, regime: str) -> pd.DataFrame:
-    with np.load(path, allow_pickle=True) as z:
-        keys = np.asarray([
-            f"{city}|{int(tree)}|{int(crop)}"
-            for city, tree, crop in zip(z["city_token"], z["tree_id"], z["crop_index"])
-        ])
-        return pd.DataFrame({
-            "record_key": keys,
-            "city": np.asarray(z["city_token"], dtype=str),
-            f"k11_label_{regime}": np.asarray(z["labels"], dtype=np.int64),
-            f"k11_prediction_{regime}": np.asarray(z["predictions"], dtype=np.int64),
-            f"k6_label_{regime}": np.asarray(z["collapsed_labels"], dtype=np.int64),
-            f"k6_prediction_{regime}": np.asarray(z["collapsed_predictions"], dtype=np.int64),
-        })
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_OUTPUT = ROOT / "outputs" / "reviewer_revision" / "completed_city_three_regime_comparison"
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--primary-predictions", type=Path, required=True)
+    parser.add_argument("--loco-root", type=Path, required=True)
+    parser.add_argument("--one-city-transfer-predictions", type=Path, required=True)
+    parser.add_argument("--qa-metadata", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    return parser.parse_args()
 
 
 def metrics(labels: np.ndarray, predictions: np.ndarray, class_count: int) -> dict[str, float | int | str]:
@@ -51,13 +45,14 @@ def metrics(labels: np.ndarray, predictions: np.ndarray, class_count: int) -> di
 
 
 def main() -> int:
-    OUTPUT.mkdir(parents=True, exist_ok=True)
-    primary = load_predictions(PRIMARY, "primary")
-    stlouis = load_predictions(STLOUIS_TRANSFER, "stlouis")
-    qa = pd.read_csv(QA, usecols=["record_key", "qa_flag_low_vegetated_height_with_lidar"])
+    arguments = parse_args()
+    arguments.output_dir.mkdir(parents=True, exist_ok=True)
+    primary = load_predictions(arguments.primary_predictions, "primary")
+    stlouis = load_predictions(arguments.one_city_transfer_predictions, "stlouis")
+    qa = load_qa_flags(arguments.qa_metadata)
     rows = []
     audits = []
-    for directory in sorted(LOCO_ROOT.glob("loco_*_test_top5_ensemble")):
+    for directory in sorted(arguments.loco_root.glob("loco_*_test_top5_ensemble")):
         path = directory / "ensemble_predictions.npz"
         if not path.exists():
             continue
@@ -82,13 +77,13 @@ def main() -> int:
                 and np.array_equal(joined.k11_label_primary, joined.k11_label_stlouis)
             ),
             "k6_labels_exact": bool(
-                np.array_equal(joined.k6_label_primary, joined.k6_label_loco)
-                and np.array_equal(joined.k6_label_primary, joined.k6_label_stlouis)
+                np.array_equal(joined.collapsed_k6_label_primary, joined.collapsed_k6_label_loco)
+                and np.array_equal(joined.collapsed_k6_label_primary, joined.collapsed_k6_label_stlouis)
             ),
         })
-        joined = joined.loc[~joined.qa_flag_low_vegetated_height_with_lidar.astype(bool)].copy()
+        joined = screen_qa(joined)
         for regime in ("primary", "loco", "stlouis"):
-            for space, class_count in (("k11", 11), ("k6", 6)):
+            for space, class_count in (("k11", 11), ("collapsed_k6", 6)):
                 result = metrics(
                     joined[f"{space}_label_{regime}"].to_numpy(),
                     joined[f"{space}_prediction_{regime}"].to_numpy(),
@@ -99,9 +94,9 @@ def main() -> int:
     if not audit[["record_sets_exact", "k11_labels_exact", "k6_labels_exact"]].all().all():
         raise ValueError(f"Comparability audit failed:\n{audit.to_string(index=False)}")
     results = pd.DataFrame(rows)
-    results.to_csv(OUTPUT / "three_regime_city_metrics_long.csv", index=False)
-    audit.to_csv(OUTPUT / "three_regime_comparability_audit.csv", index=False)
-    k6 = results.loc[results.label_space.eq("k6")].copy()
+    results.to_csv(arguments.output_dir / "three_regime_city_metrics_long.csv", index=False)
+    audit.to_csv(arguments.output_dir / "three_regime_comparability_audit.csv", index=False)
+    k6 = results.loc[results.label_space.eq("collapsed_k6")].copy()
     wide = k6.pivot(index="city", columns="regime", values=[
         "records", "represented_groups", "groups_with_at_least_10_records", "accuracy",
         "macro_f1_groups_ge10", "macro_f1_unrestricted", "weighted_f1",
@@ -111,23 +106,25 @@ def main() -> int:
     for regime in ("loco", "stlouis"):
         for metric in ("accuracy", "macro_f1_groups_ge10", "weighted_f1"):
             wide[f"delta_{metric}_{regime}_vs_primary"] = wide[f"{metric}_{regime}"] - wide[f"{metric}_primary"]
-    wide.to_csv(OUTPUT / "three_regime_city_metrics_k6_wide.csv", index=False)
+    wide.to_csv(arguments.output_dir / "three_regime_city_metrics_collapsed_k6_wide.csv", index=False)
     regime_summary = k6.groupby("regime").agg(
         cities=("city", "nunique"),
         mean_accuracy=("accuracy", "mean"), median_accuracy=("accuracy", "median"),
         mean_macro_f1=("macro_f1_groups_ge10", "mean"), median_macro_f1=("macro_f1_groups_ge10", "median"),
         mean_weighted_f1=("weighted_f1", "mean"), median_weighted_f1=("weighted_f1", "median"),
     ).reset_index()
-    regime_summary.to_csv(OUTPUT / "three_regime_summary_across_completed_cities.csv", index=False)
+    regime_summary.to_csv(arguments.output_dir / "three_regime_summary_across_completed_cities.csv", index=False)
     metadata = {
         "completed_cities": sorted(audit.city.tolist()),
         "city_count": len(audit),
         "qa_screen": "excluded qa_flag_low_vegetated_height_with_lidar records",
-        "primary_macro_f1": "collapsed-k6 macro-F1 across groups with at least 10 city test records",
-        "weighted_f1": "calculated across represented collapsed-k6 groups",
+        "primary_macro_f1": "collapsed_k6 macro-F1 across groups with at least 10 city test records",
+        "weighted_f1": "calculated across represented collapsed_k6 groups",
         "record_and_label_comparability_checks_passed": True,
     }
-    (OUTPUT / "analysis_metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    (arguments.output_dir / "analysis_metadata.json").write_text(
+        json.dumps(metadata, indent=2), encoding="utf-8"
+    )
     print(wide.to_string(index=False))
     print("\nAcross-city summary:\n", regime_summary.to_string(index=False))
     print("\nAudit:\n", audit.to_string(index=False))
