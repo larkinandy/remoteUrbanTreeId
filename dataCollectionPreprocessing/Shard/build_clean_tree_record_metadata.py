@@ -23,9 +23,6 @@ import numpy as np
 import pandas as pd
 
 
-DEFAULT_INVENTORY_ROOT = Path(r"C:\Users\larki\Desktop\PollenSense\training\McCoy")
-DEFAULT_OUTPUT_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_record_metadata_clean")
-
 TARGET_GENUS_LABELS = {
     "quercus": "quercus",
     "acer": "acer",
@@ -72,10 +69,12 @@ def extract_genus(scientific_name: object) -> str:
 
 
 def map_taxon(scientific_name: object, common_name: object) -> str | None:
-    """Map an inventory taxon to the current broad model label.
+    """Map an inventory taxon to a coarse preprocessing screening label.
 
     ``common_name`` is retained in the signature for source-data compatibility;
     the current mapping deliberately requires a usable scientific-name genus.
+    These labels identify broad source categories and catch-all records. They
+    are not the discriminator taxa or the final remote-sensing-derived groups.
     """
     del common_name
     genus = extract_genus(scientific_name)
@@ -96,9 +95,9 @@ def map_taxon(scientific_name: object, common_name: object) -> str | None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--inventory-root", type=Path, default=DEFAULT_INVENTORY_ROOT)
+    parser.add_argument("--inventory-root", type=Path, required=True)
     parser.add_argument("--inventory-pattern", default="*_Final_*.csv")
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--city-token", action="append", default=None, help="Optional city token(s). Repeatable.")
     parser.add_argument("--exclude-city-token", action="append", default=[], help="City token(s) to skip. Repeatable.")
     parser.add_argument("--longitude-column", default="longitude_coordinate")
@@ -137,7 +136,7 @@ def build_city(path: Path, args: argparse.Namespace) -> dict[str, object]:
             "city_token": city_token,
             "source_file": path.name,
             "status": "exists",
-            "output_csv": str(output_csv),
+            "output_csv": output_csv.relative_to(args.output_root).as_posix(),
             "n_singleton_coordinate_tree_records_written": int(len(existing)),
         }
 
@@ -186,6 +185,9 @@ def build_city(path: Path, args: argparse.Namespace) -> dict[str, object]:
                 "tree_lon": singleton["tree_lon"].to_numpy(float),
                 "scientific_name": singleton[args.scientific_column].astype(str).replace("nan", "").to_numpy(),
                 "common_name": singleton[args.common_column].astype(str).replace("nan", "").to_numpy(),
+                # Historical name retained because downstream study scripts
+                # use this coarse label to screen catch-all source records.
+                # It is not a discriminator or final model group label.
                 "taxon_label": [
                     map_taxon(scientific, common)
                     for scientific, common in zip(singleton[args.scientific_column], singleton[args.common_column])
@@ -204,7 +206,7 @@ def build_city(path: Path, args: argparse.Namespace) -> dict[str, object]:
         "city_token": city_token,
         "source_file": path.name,
         "status": "completed",
-        "output_csv": str(output_csv),
+        "output_csv": output_csv.relative_to(args.output_root).as_posix(),
         "n_inventory_rows": n_inventory_rows,
         "n_valid_coordinate_rows": n_valid_coords,
         "n_distinct_coordinate_pairs": n_distinct_coordinate_pairs,

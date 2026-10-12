@@ -50,6 +50,13 @@
 !/dataCollectionPreprocessing/Sentinel2/provenance/
 !/dataCollectionPreprocessing/Sentinel2/provenance/**
 
+/dataCollectionPreprocessing/Shard/*.csv
+/dataCollectionPreprocessing/Shard/*.json
+/dataCollectionPreprocessing/Shard/**/*.csv
+/dataCollectionPreprocessing/Shard/**/*.json
+!/dataCollectionPreprocessing/Shard/provenance/
+!/dataCollectionPreprocessing/Shard/provenance/**
+
 # ignore generated figures and model outputs
 /figure_scripts/
 /outputs/
