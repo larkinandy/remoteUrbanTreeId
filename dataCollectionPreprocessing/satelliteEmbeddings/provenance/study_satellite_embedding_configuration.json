@@ -13,7 +13,6 @@
     "batch_size": 5000
   },
   "sidecar": {
-    "coordinate_decimals": 7,
     "join_key": "crown_cell_id",
     "missing_policy": "zero-filled embedding with false year mask; screened during shard assembly",
     "quality_metrics": [

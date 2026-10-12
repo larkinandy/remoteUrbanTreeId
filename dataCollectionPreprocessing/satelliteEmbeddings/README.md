@@ -18,6 +18,10 @@ crown-centered NAIP metadata; it does not require the transitional
 4. Supply that sidecar root to
    `../Shard/assemble_clean_tree_id_centered_model_input_shards.py`.
 
+Shared city normalization, crown-cell construction, constants, and quality
+calculations are implemented in `satellite_embedding_utils.py`; both workflow
+scripts import the same definitions.
+
 The final-study files were produced while the project was transitioning from
 inventory-coordinate to crown-centered extraction. Some study rows therefore
 used an original export whose coordinate resolved to the same crown-centered
@@ -56,7 +60,7 @@ python dataCollectionPreprocessing/satelliteEmbeddings/derive_clean_tree_id_cent
   --crop-root "$DATA_ROOT/tree_centered_naip_crops_clean" `
   --embedding-root "$DATA_ROOT/tree_centered_satellite_embedding_exports" `
   --output-dir "$DATA_ROOT/tree_centered_satellite_embedding_sidecars" `
-  --embedding-years 2021,2022,2023
+  --embedding-years 2021 2022 2023
 ```
 
 The default export filename pattern is
@@ -69,6 +73,37 @@ Each city sidecar contains the arrays documented in
 retained as zero-filled vectors with a false year mask and are subsequently
 screened during shard assembly. The saved `config_json` contains portable
 processing settings and filenames, not workstation paths.
+
+Use `--overwrite` to replace existing city sidecars. All year options accept a
+space-separated list, for example `--embedding-years 2021 2022 2023` and
+`--expected-years 2021 2022 2023`.
+
+### Embedding source codes
+
+The stable `embedding_source_code` values are:
+
+- `0`: no annual satellite embedding was available for the row.
+- `1`: historical original-coordinate export that resolved to the final
+  crown-centered cell. This occurs only in frozen study sidecars.
+- `2`: direct crown-centered cell export. All matched rows in a clean
+  from-scratch rebuild receive this code.
+
+The compatibility flags `used_original_satellite_embedding` and
+`used_additional_satellite_embedding` correspond to codes `1` and `2`,
+respectively.
+
+Validate the sidecars before shard assembly:
+
+```powershell
+python dataCollectionPreprocessing/satelliteEmbeddings/validate_satellite_embedding_sidecars.py `
+  --sidecar-root "$DATA_ROOT/tree_centered_satellite_embedding_sidecars" `
+  --summary "$DATA_ROOT/runtime/satellite_embedding_validation_summary.csv"
+```
+
+The validator checks schema completeness, row alignment, dimensions, finite
+values, year masks, quality counts, source flags, unique identifiers, expected
+years, and portable saved configuration. It exits with a nonzero status when
+any sidecar fails.
 
 ## Frozen provenance
 

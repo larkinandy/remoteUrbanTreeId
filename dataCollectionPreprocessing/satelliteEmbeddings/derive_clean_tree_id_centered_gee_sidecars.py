@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Derive clean tree-id-centered Google Satellite Embedding sidecars.
+"""Build model-ready Google Satellite Embedding sidecars by city.
 
 The clean tree-centered dataset is anchored on matched crown coordinates, not
 the original inventory coordinate. This script computes the crown-centered
@@ -14,45 +14,22 @@ import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 from pathlib import Path
-import re
 import time
 from typing import Any
 
 import numpy as np
 import pandas as pd
-from pyproj import Transformer
 
-
-EMBEDDING_COLUMNS = [f"A{i:02d}" for i in range(64)]
-EMBEDDING_YEARS = [2021, 2022, 2023]
-QUALITY_COLUMNS = [
-    "embedding_year_count",
-    "embedding_has_2021",
-    "embedding_has_2022",
-    "embedding_has_2023",
-    "embedding_mean_pairwise_dot",
-    "embedding_min_pairwise_dot",
-]
-
-CITY_ALIASES = {
-    "abq": "albuquerque",
-    "ana": "anaheim",
-    "arl": "arlington",
-    "atl": "atlanta",
-    "bal": "baltimore",
-    "buf": "buffalo",
-    "cos": "coloradosprings",
-    "csp": "coloradosprings",
-    "dca": "washingtondc",
-    "dc": "washingtondc",
-    "den": "denver",
-    "ggv": "gardengrove",
-    "hnb": "huntingtonbeach",
-    "la": "losangeles",
-    "lax": "losangeles",
-    "nyc": "newyork",
-    "sf": "sanfrancisco",
-}
+from satellite_embedding_utils import (
+    EMBEDDING_COLUMNS,
+    EMBEDDING_YEARS,
+    QUALITY_COLUMNS,
+    SOURCE_DIRECT_CROWN_CELL,
+    crown_cell_table,
+    embedding_quality_array,
+    normalize_city,
+)
+from satellite_embedding_io import discover_embedding_files, load_embedding_lookup
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,75 +41,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exclude-city-token", action="append", default=[])
     parser.add_argument("--metadata-pattern", default="*_tree_id_centered_nearest_64px_metadata.csv")
     parser.add_argument("--embedding-pattern", default="tree_centered_satellite_embedding_{city}_{year}_batch_*.csv")
-    parser.add_argument("--embedding-years", default="2021,2022,2023")
-    parser.add_argument("--coordinate-decimals", type=int, default=7)
+    parser.add_argument("--embedding-years", nargs="+", type=int, default=EMBEDDING_YEARS)
     parser.add_argument("--parallel-workers", type=int, default=1)
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
 
 def norm_city(value: str) -> str:
-    token = re.sub(r"[^a-z0-9]+", "", str(value).lower())
-    return CITY_ALIASES.get(token, token)
-
-
-def display_city_variants(city: str) -> set[str]:
-    compact = norm_city(city)
-    variants = {compact, compact.lower(), compact.title()}
-    special = {
-        "albuquerque": "Albuquerque",
-        "anaheim": "Anaheim",
-        "arlington": "Arlington",
-        "atlanta": "Atlanta",
-        "auroraco": "AuroraCO",
-        "austin": "Austin",
-        "baltimore": "Baltimore",
-        "buffalo": "Buffalo",
-        "capecoral": "CapeCoral",
-        "coloradosprings": "ColoradoSprings",
-        "columbus": "Columbus",
-        "denver": "Denver",
-        "desmoines": "DesMoines",
-        "detroit": "Detroit",
-        "gardengrove": "GardenGrove",
-        "huntingtonbeach": "HuntingtonBeach",
-        "knoxville": "Knoxville",
-        "lasvegas": "LasVegas",
-        "losangeles": "LosAngeles",
-        "louisville": "Louisville",
-        "madison": "Madison",
-        "milwaukee": "Milwaukee",
-        "minneapolis": "Minneapolis",
-        "newyork": "NewYork",
-        "oklahomacity": "OklahomaCity",
-        "overlandpark": "OverlandPark",
-        "pittsburgh": "Pittsburgh",
-        "portland": "Portland",
-        "providence": "Providence",
-        "ranchocucamonga": "RanchoCucamonga",
-        "rochester": "Rochester",
-        "sacramento": "Sacramento",
-        "sandiego": "SanDiego",
-        "sanfrancisco": "SanFrancisco",
-        "sanjose": "SanJose",
-        "santarosa": "SantaRosa",
-        "seattle": "Seattle",
-        "siouxfalls": "SiouxFalls",
-        "stlouis": "StLouis",
-        "washingtondc": "WashingtonDC",
-    }
-    if compact in special:
-        variants.add(special[compact])
-    return variants
-
-
-def parse_years(value: str) -> list[int]:
-    years: list[int] = []
-    for token in str(value).split(","):
-        token = token.strip()
-        if token:
-            years.append(int(token))
-    return years or EMBEDDING_YEARS
+    return normalize_city(value)
 
 
 def discover_cities(crop_root: Path, pattern: str) -> list[str]:
@@ -152,237 +68,60 @@ def find_crop_metadata(args: argparse.Namespace, city: str) -> Path:
     return matches[0]
 
 
-def coord_key(lat: pd.Series | np.ndarray, lon: pd.Series | np.ndarray, decimals: int) -> np.ndarray:
-    scale = 10**decimals
-    lat_i = np.rint(np.asarray(lat, dtype=np.float64) * scale).astype(np.int64)
-    lon_i = np.rint(np.asarray(lon, dtype=np.float64) * scale).astype(np.int64)
-    return lat_i.astype(str) + "_" + lon_i.astype(str)
-
-
-def crown_cell_table(metadata: pd.DataFrame, decimals: int) -> pd.DataFrame:
-    required = {"tree_id", "crop_index", "crown_x_utm", "crown_y_utm", "crown_epsg"}
-    missing = sorted(required.difference(metadata.columns))
-    if missing:
-        raise RuntimeError(f"Clean crop metadata is missing required column(s): {missing}")
-    pieces: list[pd.DataFrame] = []
-    for epsg_value, group in metadata.groupby("crown_epsg", sort=False):
-        epsg_int = int(epsg_value)
-        x = pd.to_numeric(group["crown_x_utm"], errors="coerce").to_numpy(dtype=np.float64)
-        y = pd.to_numeric(group["crown_y_utm"], errors="coerce").to_numpy(dtype=np.float64)
-        col = np.floor(x / 10.0).astype(np.int64)
-        row = np.floor(y / 10.0).astype(np.int64)
-        center_x = col * 10.0 + 5.0
-        center_y = row * 10.0 + 5.0
-        transformer = Transformer.from_crs(f"EPSG:{epsg_int}", "EPSG:4326", always_xy=True)
-        lon, lat = transformer.transform(center_x, center_y)
-        part = pd.DataFrame(
-            {
-                "tree_id": group["tree_id"].to_numpy(),
-                "crop_index": group["crop_index"].to_numpy(),
-                "crown_cell_id": [f"epsg{epsg_int}_c{c}_r{r}" for c, r in zip(col, row)],
-                "crown_cell_epsg": epsg_int,
-                "crown_cell_col": col,
-                "crown_cell_row": row,
-                "crown_cell_center_x": center_x,
-                "crown_cell_center_y": center_y,
-                "crown_cell_lat": np.asarray(lat, dtype=np.float64),
-                "crown_cell_lon": np.asarray(lon, dtype=np.float64),
-            },
-            index=group.index,
-        )
-        pieces.append(part)
-    out = pd.concat(pieces).sort_index()
-    out["crown_coord_key"] = coord_key(out["crown_cell_lat"], out["crown_cell_lon"], decimals)
-    return out
-
-
-def embedding_quality_array(values: np.ndarray, mask: np.ndarray, years: list[int]) -> np.ndarray:
-    present = mask.astype(bool)
-    quality = np.zeros((values.shape[0], len(QUALITY_COLUMNS)), dtype=np.float32)
-    quality[:, 0] = present.sum(axis=1).astype(np.float32)
-    for year in EMBEDDING_YEARS:
-        if year in years:
-            quality[:, QUALITY_COLUMNS.index(f"embedding_has_{year}")] = present[:, years.index(year)].astype(np.float32)
-    quality[:, QUALITY_COLUMNS.index("embedding_mean_pairwise_dot")] = 1.0
-    quality[:, QUALITY_COLUMNS.index("embedding_min_pairwise_dot")] = 1.0
-    if len(years) >= 2:
-        normed = values / np.maximum(np.linalg.norm(values, axis=2, keepdims=True), 1e-6)
-        pair_dots: list[np.ndarray] = []
-        for i in range(len(years)):
-            for j in range(i + 1, len(years)):
-                valid_pair = present[:, i] & present[:, j]
-                dot = np.sum(normed[:, i, :] * normed[:, j, :], axis=1).astype(np.float32)
-                dot[~valid_pair] = np.nan
-                pair_dots.append(dot)
-        if pair_dots:
-            dots = np.vstack(pair_dots).T
-            any_pair = np.isfinite(dots).any(axis=1)
-            mean_dot = np.ones(values.shape[0], dtype=np.float32)
-            min_dot = np.ones(values.shape[0], dtype=np.float32)
-            if any_pair.any():
-                with np.errstate(invalid="ignore"):
-                    mean_dot[any_pair] = np.nanmean(dots[any_pair], axis=1)
-                    min_dot[any_pair] = np.nanmin(dots[any_pair], axis=1)
-            quality[any_pair, QUALITY_COLUMNS.index("embedding_mean_pairwise_dot")] = mean_dot[any_pair]
-            quality[any_pair, QUALITY_COLUMNS.index("embedding_min_pairwise_dot")] = min_dot[any_pair]
-    return np.nan_to_num(quality, nan=1.0, posinf=1.0, neginf=0.0)
-
-
-def eligible_embedding_files(args: argparse.Namespace, city: str, years: list[int]) -> list[tuple[Path, int]]:
-    files: list[tuple[Path, int]] = []
-    root = Path(args.embedding_root)
-    for year in years:
-        pattern = args.embedding_pattern.format(city=city, year=year)
-        for path in sorted(root.glob(pattern)):
-            files.append((path, year))
-    return files
-
-
-def load_embedding_lookup(
-    city: str,
-    label: str,
-    files: list[tuple[Path, int]],
-    needed_cells: pd.DataFrame,
+def assign_embeddings(
+    crown_ids: np.ndarray,
+    lookup: dict[str, dict[int, np.ndarray]],
     years: list[int],
-    decimals: int,
-) -> tuple[dict[str, dict[int, np.ndarray]], dict[str, int]]:
-    lookup: dict[str, dict[int, np.ndarray]] = {}
-    stats = {"files": len(files), "matched_rows": 0, "matched_cells": 0}
-    if not files:
-        return lookup, stats
-    needed_ids = set(needed_cells["crown_cell_id"].astype(str))
-    needed_epsgs = sorted(set(pd.to_numeric(needed_cells["crown_cell_epsg"], errors="coerce").dropna().astype(int)))
-    started = time.perf_counter()
-    for index, (path, year) in enumerate(files, start=1):
-        header = set(pd.read_csv(path, nrows=0).columns)
-        usecols = [column for column in ["crown_cell_id", "latitude", "longitude", "embedding_year", *EMBEDDING_COLUMNS] if column in header]
-        if not {"latitude", "longitude", "embedding_year"}.issubset(usecols):
-            print(f"{city}: WARNING {label} file missing coordinate/year columns: {path}", flush=True)
-            continue
-        frame = pd.read_csv(path, usecols=usecols)
-        frame["embedding_year"] = pd.to_numeric(frame["embedding_year"], errors="coerce").astype("Int64")
-        frame = frame.loc[frame["embedding_year"].eq(year)].copy()
-        if frame.empty:
-            continue
-        if "crown_cell_id" in frame.columns:
-            frame["match_key"] = frame["crown_cell_id"].astype(str)
-            frame = frame.loc[frame["match_key"].isin(needed_ids)].copy()
-        else:
-            match_keys = np.full(len(frame), "", dtype=object)
-            lon = pd.to_numeric(frame["longitude"], errors="coerce").to_numpy(dtype=np.float64)
-            lat = pd.to_numeric(frame["latitude"], errors="coerce").to_numpy(dtype=np.float64)
-            for epsg in needed_epsgs:
-                transformer = Transformer.from_crs("EPSG:4326", f"EPSG:{int(epsg)}", always_xy=True)
-                x, y = transformer.transform(lon, lat)
-                col = np.floor(np.asarray(x, dtype=np.float64) / 10.0).astype(np.int64)
-                row = np.floor(np.asarray(y, dtype=np.float64) / 10.0).astype(np.int64)
-                candidate = np.asarray([f"epsg{int(epsg)}_c{c}_r{r}" for c, r in zip(col, row)], dtype=object)
-                candidate_mask = np.isin(candidate, list(needed_ids))
-                match_keys[candidate_mask] = candidate[candidate_mask]
-            frame["match_key"] = match_keys
-            frame = frame.loc[frame["match_key"].isin(needed_ids)].copy()
-        if frame.empty:
-            if index == 1 or index == len(files) or index % 25 == 0:
-                print(
-                    f"{city}: {label} embedding file {index:,}/{len(files):,}; matched_rows={stats['matched_rows']:,}; "
-                    f"elapsed={time.perf_counter() - started:.1f}s",
-                    flush=True,
-                )
-            continue
-        for column in EMBEDDING_COLUMNS:
-            frame[column] = pd.to_numeric(frame[column], errors="coerce")
-        grouped = frame.groupby(["match_key", "embedding_year"], as_index=False)[EMBEDDING_COLUMNS].mean()
-        for record in grouped.itertuples(index=False):
-            key = str(record.match_key)
-            vector = np.asarray([getattr(record, column) for column in EMBEDDING_COLUMNS], dtype=np.float32)
-            vector = np.nan_to_num(vector, nan=0.0, posinf=0.0, neginf=0.0)
-            lookup.setdefault(key, {})[int(record.embedding_year)] = vector
-        stats["matched_rows"] += int(len(frame))
-        if index == 1 or index == len(files) or index % 25 == 0:
-            print(
-                f"{city}: {label} embedding file {index:,}/{len(files):,}; matched_rows={stats['matched_rows']:,}; "
-                f"elapsed={time.perf_counter() - started:.1f}s",
-                flush=True,
-            )
-    stats["matched_cells"] = len(lookup)
-    return lookup, stats
-
-
-def process_city(city: str, args: argparse.Namespace) -> dict[str, Any]:
-    started = time.perf_counter()
-    out_dir = Path(args.output_dir) / city
-    out_path = out_dir / f"{city}_tree_id_centered_gee_inputs.npz"
-    if out_path.exists() and not args.force:
-        with np.load(out_path, allow_pickle=False) as data:
-            rows = int(data["tree_id"].shape[0])
-            missing = int(np.asarray(data["missing_satellite_embedding"], dtype=bool).sum())
-        return {"city_token": city, "status": "exists", "rows": rows, "missing_satellite_embedding": missing}
-
-    years = parse_years(args.embedding_years)
-    metadata_path = find_crop_metadata(args, city)
-    metadata = pd.read_csv(metadata_path, low_memory=False)
-    cells = crown_cell_table(metadata, int(args.coordinate_decimals))
-    unique_cells = cells.drop_duplicates("crown_cell_id", keep="first")
-    print(
-        f"{city}: rows={len(metadata):,}; crown-centered cells={len(unique_cells):,}",
-        flush=True,
-    )
-
-    embedding_lookup, embedding_stats = load_embedding_lookup(
-        city,
-        "crown-centered",
-        eligible_embedding_files(args, city, years),
-        unique_cells,
-        years,
-        int(args.coordinate_decimals),
-    )
-
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Expand cell-level annual embeddings to metadata-row arrays."""
+    embedding = np.zeros((len(crown_ids), len(years), len(EMBEDDING_COLUMNS)), dtype=np.float32)
+    mask = np.zeros((len(crown_ids), len(years)), dtype=np.float32)
+    source = np.zeros(len(crown_ids), dtype=np.int8)
+    original = np.zeros(len(crown_ids), dtype=bool)
+    direct = np.zeros(len(crown_ids), dtype=bool)
     year_to_pos = {year: pos for pos, year in enumerate(years)}
-    embedding = np.zeros((len(metadata), len(years), len(EMBEDDING_COLUMNS)), dtype=np.float32)
-    mask = np.zeros((len(metadata), len(years)), dtype=np.float32)
-    source_code = np.zeros(len(metadata), dtype=np.int8)
-    used_original = np.zeros(len(metadata), dtype=bool)
-    used_supplemental = np.zeros(len(metadata), dtype=bool)
-
-    print(
-        f"{city}: assigning embeddings to {len(metadata):,} crop row(s); "
-        f"exported_cells={len(embedding_lookup):,}",
-        flush=True,
-    )
-    crown_ids = cells["crown_cell_id"].astype(str).to_numpy()
     for row, cell_id in enumerate(crown_ids):
-        vectors_by_year = embedding_lookup.get(cell_id)
-        if vectors_by_year:
-            source_code[row] = 2
-            used_supplemental[row] = True
-        if not vectors_by_year:
+        vectors = lookup.get(str(cell_id))
+        if not vectors:
             continue
-        for year, vector in vectors_by_year.items():
-            if year not in year_to_pos:
-                continue
-            pos = year_to_pos[year]
-            embedding[row, pos] = vector
-            mask[row, pos] = 1.0
+        source[row] = SOURCE_DIRECT_CROWN_CELL
+        direct[row] = True
+        for year, vector in vectors.items():
+            if year in year_to_pos:
+                embedding[row, year_to_pos[year]] = vector
+                mask[row, year_to_pos[year]] = 1.0
+    return embedding, mask, source, original, direct
 
-    print(f"{city}: computing embedding quality metrics", flush=True)
+
+def write_sidecar(
+    path: Path,
+    metadata: pd.DataFrame,
+    cells: pd.DataFrame,
+    years: list[int],
+    embedding: np.ndarray,
+    mask: np.ndarray,
+    source: np.ndarray,
+    original: np.ndarray,
+    direct: np.ndarray,
+    metadata_name: str,
+) -> np.ndarray:
+    """Write one portable city sidecar and return its missing-row mask."""
     quality = embedding_quality_array(embedding, mask, years)
     missing = mask.sum(axis=1) == 0
-
-    out_dir.mkdir(parents=True, exist_ok=True)
     config = {
-        "city_token": city,
-        "crop_metadata_name": metadata_path.name,
+        "city_token": path.parent.name,
+        "crop_metadata_name": metadata_name,
         "embedding_source": "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL",
         "embedding_years": years,
-        "coordinate_decimals": int(args.coordinate_decimals),
         "join_policy": "direct crown-centered 10 m cell join by crown_cell_id",
     }
+    path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
-        out_path,
+        path,
         tree_id=metadata["tree_id"].to_numpy(dtype=np.int64),
         crop_index=metadata["crop_index"].to_numpy(dtype=np.int64),
         row_index=metadata["row_index"].to_numpy(dtype=np.int64) if "row_index" in metadata.columns else np.arange(len(metadata), dtype=np.int64),
-        crown_cell_id=cells["crown_cell_id"].astype(str).to_numpy(),
+        crown_cell_id=np.asarray(cells["crown_cell_id"].astype(str).tolist(), dtype=str),
         crown_cell_epsg=cells["crown_cell_epsg"].to_numpy(dtype=np.int32),
         crown_cell_col=cells["crown_cell_col"].to_numpy(dtype=np.int64),
         crown_cell_row=cells["crown_cell_row"].to_numpy(dtype=np.int64),
@@ -394,11 +133,54 @@ def process_city(city: str, args: argparse.Namespace) -> dict[str, Any]:
         satellite_embedding_columns=np.asarray(EMBEDDING_COLUMNS),
         satellite_embedding_years=np.asarray(years, dtype=np.int32),
         satellite_embedding_quality_columns=np.asarray(QUALITY_COLUMNS),
-        embedding_source_code=source_code,
+        embedding_source_code=source,
         missing_satellite_embedding=missing,
-        used_original_satellite_embedding=used_original,
-        used_additional_satellite_embedding=used_supplemental,
+        used_original_satellite_embedding=original,
+        used_additional_satellite_embedding=direct,
         config_json=np.asarray(json.dumps(config, indent=2)),
+    )
+    return missing
+
+
+def process_city(city: str, args: argparse.Namespace) -> dict[str, Any]:
+    started = time.perf_counter()
+    out_dir = Path(args.output_dir) / city
+    out_path = out_dir / f"{city}_tree_id_centered_gee_inputs.npz"
+    if out_path.exists() and not args.overwrite:
+        with np.load(out_path, allow_pickle=False) as data:
+            rows = int(data["tree_id"].shape[0])
+            missing = int(np.asarray(data["missing_satellite_embedding"], dtype=bool).sum())
+        return {"city_token": city, "status": "exists", "rows": rows, "missing_satellite_embedding": missing}
+
+    years = list(args.embedding_years)
+    metadata_path = find_crop_metadata(args, city)
+    metadata = pd.read_csv(metadata_path, low_memory=False)
+    cells = crown_cell_table(metadata)
+    unique_cells = cells.drop_duplicates("crown_cell_id", keep="first")
+    print(
+        f"{city}: rows={len(metadata):,}; crown-centered cells={len(unique_cells):,}",
+        flush=True,
+    )
+
+    embedding_lookup, embedding_stats = load_embedding_lookup(
+        city,
+        discover_embedding_files(Path(args.embedding_root), args.embedding_pattern, city, years),
+        unique_cells,
+    )
+
+    print(
+        f"{city}: assigning embeddings to {len(metadata):,} crop row(s); "
+        f"exported_cells={len(embedding_lookup):,}",
+        flush=True,
+    )
+    embedding, mask, source_code, used_original, used_supplemental = assign_embeddings(
+        cells["crown_cell_id"].astype(str).to_numpy(), embedding_lookup, years
+    )
+
+    print(f"{city}: computing embedding quality metrics", flush=True)
+    missing = write_sidecar(
+        out_path, metadata, cells, years, embedding, mask, source_code,
+        used_original, used_supplemental, metadata_path.name
     )
     missing_count = int(missing.sum())
     elapsed = time.perf_counter() - started
