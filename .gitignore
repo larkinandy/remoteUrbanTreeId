@@ -27,6 +27,15 @@
 !/dataCollectionPreprocessing/LiDAR/provenance/
 !/dataCollectionPreprocessing/LiDAR/provenance/**
 
+/dataCollectionPreprocessing/NAIP/*.csv
+/dataCollectionPreprocessing/NAIP/*.json
+/dataCollectionPreprocessing/NAIP/**/*.csv
+/dataCollectionPreprocessing/NAIP/**/*.json
+
+# Frozen NAIP configurations, inputs, and summaries are reproducibility artifacts.
+!/dataCollectionPreprocessing/NAIP/provenance/
+!/dataCollectionPreprocessing/NAIP/provenance/**
+
 # ignore generated figures and model outputs
 /figure_scripts/
 /outputs/

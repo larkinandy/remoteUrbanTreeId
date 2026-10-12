@@ -8,10 +8,10 @@ current workflow:
 
 For each target county in ``naip_county_manifest.json``, it selects the
 same-year natural-color and companion/CIR ZIP pair closest to 2022, then
-downloads the raw ZIPs into city-code folders under ``E:/NAIP_PAIRED``:
+downloads the raw ZIPs into city-code folders under the user-supplied output directory:
 
-    E:/NAIP_PAIRED/ATL/ortho_1-1_hn_s_ga063_2023_1.zip
-    E:/NAIP_PAIRED/ATL/ortho_1-1_hc_s_ga063_2023_1.zip
+    <output>/ATL/ortho_1-1_hn_s_ga063_2023_1.zip
+    <output>/ATL/ortho_1-1_hc_s_ga063_2023_1.zip
 """
 
 from __future__ import annotations
@@ -28,9 +28,6 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_BOX_ROOT = "https://nrcs.app.box.com/v/naip/folder/17936490251"
-DEFAULT_MANIFEST = HERE / "naip_county_manifest.json"
-DEFAULT_OUTPUT = Path(r"E:\NAIP_PAIRED")
-SKIPPED_CITY_CODES = {"BAL"}
 
 STATE_NAMES = {
     "AL": "alabama", "AK": "alaska", "AZ": "arizona", "AR": "arkansas",
@@ -88,8 +85,8 @@ class DownloadTask:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--box-root-url", default=DEFAULT_BOX_ROOT)
-    parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--target-year", type=int, default=2022)
     parser.add_argument("--year-window", type=int, default=6)
     parser.add_argument("--city-code", action="append", default=[], help="Restrict to one or more city codes.")
@@ -97,8 +94,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--state", action="append", default=[], help="Restrict to one or more state abbreviations.")
     parser.add_argument("--natural-product", action="append", default=["hn", "nc"])
     parser.add_argument("--companion-product", action="append", default=["hc"])
-    parser.add_argument("--index-cache", type=Path, default=HERE / "naip_paired_box_index.json")
-    parser.add_argument("--selection-output", type=Path, default=HERE / "naip_paired_selection.json")
+    parser.add_argument("--index-cache", type=Path, required=True, help="Local cache for the Box catalog crawl.")
+    parser.add_argument("--selection-output", type=Path, required=True, help="Output archive-selection manifest.")
+    parser.add_argument("--skip-city-code", action="append", default=[], help="City code stored through a non-paired source workflow. Repeatable.")
     parser.add_argument("--refresh-index", action="store_true")
     parser.add_argument("--scroll-rounds", type=int, default=80)
     parser.add_argument("--settle-seconds", type=float, default=0.25)
@@ -729,6 +727,7 @@ def write_selection(path: Path, selected: dict[tuple[str, str], dict[str, Archiv
 def main() -> int:
     args = parse_args()
     manifest = load_json(args.manifest)
+    skipped_city_codes = {code.upper() for code in args.skip_city_code}
     city_codes = {code.upper() for code in args.city_code}
     if args.test_city:
         test_code = resolve_test_city(manifest, args.test_city)
@@ -736,17 +735,20 @@ def main() -> int:
             raise SystemExit("--test-city cannot be combined with a different --city-code.")
         city_codes = {test_code}
         print(f"Test-city mode: limiting run to {test_code} ({args.test_city})")
-    skipped_requested = sorted(SKIPPED_CITY_CODES if not city_codes else city_codes & SKIPPED_CITY_CODES)
+    skipped_requested = sorted(skipped_city_codes if not city_codes else city_codes & skipped_city_codes)
     if skipped_requested:
         print(
             "Skipping city code(s) with non-paired NAIP storage: "
             + ", ".join(skipped_requested)
         )
-    if city_codes and city_codes <= SKIPPED_CITY_CODES:
+    if city_codes and city_codes <= skipped_city_codes:
         print("No paired NAIP downloads requested after skipped city filtering.")
         return 0
 
-    targets = target_counties(manifest, city_codes=city_codes, states={state.upper() for state in args.state})
+    selected_city_codes = city_codes - skipped_city_codes if city_codes else {
+        str(city.get("code", "")).upper() for city in manifest.get("cities", [])
+    } - skipped_city_codes
+    targets = target_counties(manifest, city_codes=selected_city_codes, states={state.upper() for state in args.state})
     if not targets:
         raise SystemExit("No target counties matched the manifest and filters.")
     print(f"Target counties: {len(targets)}")

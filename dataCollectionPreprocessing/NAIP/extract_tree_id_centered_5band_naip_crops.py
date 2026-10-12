@@ -31,23 +31,18 @@ if str(HERE) not in sys.path:
 import tree_centered_naip_utils as naip_utils
 
 
-DEFAULT_JOIN_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_to_detected_crowns_clean")
-DEFAULT_NAIP_DIR = Path(r"E:\NAIP_PAIRED")
-DEFAULT_OUTPUT_DIR = Path(r"H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean")
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--join-csv", type=Path, default=None, help="Clean tree-to-crown join. Defaults to --join-root/<city>.")
-    parser.add_argument("--join-root", type=Path, default=DEFAULT_JOIN_ROOT)
+    parser.add_argument("--join-root", type=Path, default=None, help="Root containing per-city clean join CSVs.")
     parser.add_argument("--join-pattern", default="{city}_tree_to_nearest_detected_crown_5m.csv")
     parser.add_argument("--metadata-csv", type=Path, default=None, help="Compatibility input containing prepared crop metadata.")
     parser.add_argument("--fiveband-index-csv", type=Path, default=None, help="Optional legacy source-raster index.")
-    parser.add_argument("--naip-dir", type=Path, default=DEFAULT_NAIP_DIR)
+    parser.add_argument("--naip-dir", type=Path, required=True)
     parser.add_argument("--sid-pattern", default="*.sid")
     parser.add_argument("--bands", default="1,2,3,4", help="1-based source bands written as R,G,B,NIR.")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--city-token", default="baltimore")
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--city-token", required=True)
     parser.add_argument("--output-prefix", default=None)
     parser.add_argument("--crop-size", type=int, default=64)
     parser.add_argument("--crop-metres", type=float, default=38.0)
@@ -190,6 +185,8 @@ def main() -> int:
     compatibility_metadata = getattr(args, "metadata_csv", None)
     join_csv = getattr(args, "join_csv", None)
     if compatibility_metadata is None:
+        if join_csv is None and args.join_root is None:
+            raise SystemExit("Supply --join-csv or --join-root when --metadata-csv is not used.")
         join_csv = Path(join_csv) if join_csv is not None else Path(args.join_root) / args.city_token / str(args.join_pattern).format(city=args.city_token, city_token=args.city_token)
         if not join_csv.exists():
             raise FileNotFoundError(join_csv)

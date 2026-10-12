@@ -1,0 +1,13 @@
+{
+  "file": "../county_boundaries.geojson",
+  "sha256": "e540149b7525e71ee6b6cab6dea2a95205f11e0c3e7374d27a7c9c47ea96e8c0",
+  "feature_count": 3221,
+  "geometry_types": ["Polygon", "MultiPolygon"],
+  "coordinate_reference_system": "EPSG:4326",
+  "crs_basis": "Longitude/latitude coordinates and the manifest builder's documented input contract; the GeoJSON does not contain an explicit CRS member.",
+  "property_fields": ["GEO_ID", "STATE", "COUNTY", "NAME", "LSAD", "CENSUSAREA"],
+  "source": "Not recorded when this legacy copy was acquired.",
+  "vintage": "Not recorded when this legacy copy was acquired.",
+  "license": "Not recorded with this legacy copy.",
+  "reproducibility_note": "The exact study file is retained and checksum-frozen. A future release should replace the undocumented boundary source with a cited Census county boundary vintage and regenerate the county manifest."
+}

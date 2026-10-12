@@ -1,283 +1,193 @@
 # Tree-Centered NAIP Data Pipeline
 
-This folder contains the NAIP workflow used to download county imagery and
-create RGBNIR image chips centered on identified tree crowns. The current
-pipeline operates on crown coordinates directly; it does not create
-Sentinel-cell-centered chips.
+This folder contains the reproducible workflow used to select and download
+National Agriculture Imagery Program (NAIP) imagery and create RGBNIR image
+chips centered on identified tree crowns. These are tree-centered crops, not
+Sentinel-cell-centered crops.
 
-<img src = https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/NAIP.png width="800">
-
+<img src="https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/NAIP.png" width="800">
 
 ## Folder contents
 
 | File | Purpose |
 |---|---|
-| `build_county_manifest.py` | Intersects inventory coordinates with county boundaries and creates `naip_county_manifest.json`. |
-| `county_boundaries.geojson` | County polygons used by the manifest builder. |
-| `download_naip_paired_box.py` | Selects and downloads same-year natural-color and companion/NIR county archives from the NRCS Box archive. |
-| `extract_tree_id_centered_naip_crops.py` | Creates crown-centered RGBNIR chips from paired natural-color and companion/NIR archives. |
-| `extract_tree_id_centered_5band_naip_crops.py` | Creates crown-centered RGBNIR chips from single multiband NAIP rasters. |
-| `tree_centered_naip_utils.py` | Shared raster, archive, reprojection, block-reading, resizing, and QA utilities. This is imported by the extractors and is not run directly. |
+| `build_county_manifest.py` | Intersects inventory coordinates with county boundaries and creates the city-to-county manifest. |
+| `county_boundaries.geojson` | Exact county boundary file used in the workflow. |
+| `download_naip_paired_box.py` | Selects and downloads same-year natural-color and companion/NIR county archives. |
+| `extract_tree_id_centered_naip_crops.py` | Creates RGBNIR crops from paired natural-color and companion/NIR imagery. |
+| `extract_tree_id_centered_5band_naip_crops.py` | Creates RGBNIR crops from single multiband imagery. |
+| `tree_centered_naip_utils.py` | Shared raster, archive, reprojection, block-reading, resizing, and QA functions. |
+| `inspect_sid_metadata.py` | Prints ArcPy raster, spatial-reference, and band metadata for SID files. |
+| `freeze_study_naip_provenance.py` | Reconstructs path-independent frozen source tables from retained outputs. |
+| `provenance/` | Frozen study configuration, boundary metadata, city source formats, and raster inventory. |
+| `environment-naip-download.yml` | Open-source environment for manifest construction and downloads. |
 
-## Requirements
+Generated manifests, catalog caches, selections, summaries, and crop metadata
+are ignored outside `provenance/`. Frozen files in `provenance/` are tracked.
 
-Run the crop extractors with the ArcGIS Pro Python environment. They require:
+## Environments
 
-- ArcPy for reading MrSID rasters;
-- NumPy and pandas;
-- pyproj when projected crown coordinates are not already present;
-- enough temporary disk space to extract `.sid` files from downloaded ZIPs.
+Two environments were used.
 
-The Box downloader additionally requires Playwright and an installed Edge
-browser. If necessary, install Playwright into the interpreter used for the
-download step:
+### Archive discovery and download
 
 ```powershell
-python -m pip install playwright
+conda env create --file dataCollectionPreprocessing/NAIP/environment-naip-download.yml
+conda activate treeid-naip-download
 python -m playwright install msedge
 ```
 
+This environment runs the manifest builder, Box downloader, and provenance
+freezer.
+
+### MrSID crop extraction
+
+The two crop extractors and `inspect_sid_metadata.py` were run with the Python
+environment bundled with **ArcGIS Pro 3.6**, including ArcPy. ArcPy is licensed
+software and cannot be installed by this repository. NumPy and pandas must
+remain compatible with ArcGIS Pro; add `pyproj` to an ArcGIS environment clone
+if projected crown coordinates are not already available.
+
+## Configuration and paths
+
+Scientific settings and storage locations are separate:
+
+- `provenance/study_naip_configuration.json` freezes the manuscript settings.
+- Inputs, outputs, caches, and mutable manifests are explicit runtime paths.
+  The scripts contain no workstation drive-letter defaults.
+- Paths under `D:\urban_tree_data` below are examples, not defaults.
+
+The study used 64 × 64-pixel, 38 × 38-metre RGBNIR crops and best-overlap
+source selection. Baltimore and Washington, DC used the single-multiband
+workflow; the other retained cities used paired natural-color and companion
+imagery. The frozen configuration and city table are authoritative.
+
+## Workflow dependencies
+
+1. Municipal inventory files provide coordinates for county assignment.
+2. `dataCollectionPreprocessing/treeCrown/spatial_join_clean_tree_records_to_detected_crowns.py`
+   creates the clean tree-to-crown joins used as crop centers.
+3. This folder selects/downloads NAIP and builds row-aligned crops and metadata.
+4. `dataCollectionPreprocessing/LiDAR/create_tree_centered_lidar_crop_products_laspy_pipeline.py`
+   uses the NAIP footprint and crown coordinates for aligned LiDAR products.
+5. `dataCollectionPreprocessing/shard/assemble_clean_tree_id_centered_model_input_shards.py`
+   consumes the NAIP and LiDAR products.
+
+All referenced scripts are in this repository. Large inventories, imagery,
+joins, and output arrays are not stored in Git.
+
 ## Crown-coordinate input
 
-Each city should have one clean tree-to-crown join CSV. The default layout is:
+Clean tree-to-crown joins require `tree_id`, `crown_id`, `crown_epsg`, and
+`match_distance_m`, plus either `crown_x_utm`/`crown_y_utm` or
+`crown_lon`/`crown_lat`. `tree_id` must be unique within a city.
 
-```text
-H:\TreeCenteredModelInputs\tree_to_detected_crowns_clean\<city>\
-  <city>_tree_to_nearest_detected_crown_5m.csv
-```
+## 1. Build the county manifest
 
-Create these joins with
-`dataCollectionPreprocessing/treeCrown/spatial_join_clean_tree_records_to_detected_crowns.py`
-after running the tree detector. See `dataCollectionPreprocessing/treeCrown/README.md`
-for the expected crown-center input schema.
-
-Both extractors require these columns:
-
-- `tree_id`: unique tree record identifier;
-- `crown_id`: identifier of the matched/identified crown;
-- `crown_epsg`: EPSG code for the crown coordinate system;
-- `match_distance_m`: distance between the inventory tree and identified crown.
-
-Coordinates may be supplied as either:
-
-- `crown_x_utm` and `crown_y_utm`, which are used directly; or
-- `crown_lon` and `crown_lat`, which are projected using `crown_epsg`.
-
-The paired extractor also preserves the tree-coordinate and crown-coordinate
-columns present in the input CSV. `tree_id` values must be unique within a
-city file.
-
-## Workflow overview
-
-```mermaid
-flowchart TD
-    A["Tree datasets with identified crown coordinates"] --> B["County manifest"]
-    B --> C["Download county NAIP archives"]
-    C --> D{"NAIP storage format"}
-    D -->|"Natural RGB plus companion NIR"| E["Paired crown extractor"]
-    D -->|"Single multiband raster"| F["5-band crown extractor"]
-    A --> E
-    A --> F
-    E --> G["Tree-centered RGBNIR arrays and aligned metadata"]
-    F --> G
-```
-
-## 1. Prepare the county manifest
-
-Both paired archive discovery and crown extraction use
-`naip_county_manifest.json` to map a city name to its three-letter storage
-code and counties. This generated file is not currently stored in the folder,
-so create or supply it before running the paired workflow.
-
-The expected structure is:
-
-```json
-{
-  "cities": [
-    {
-      "city": "Atlanta",
-      "code": "ATL",
-      "points": 1000,
-      "counties": [
-        {
-          "geoid": "13121",
-          "state": "GA",
-          "county_fips": "121",
-          "name": "Fulton"
-        }
-      ]
-    }
-  ],
-  "unmatched": []
-}
-```
-
-To generate it with `build_county_manifest.py`, first set the script's
-`SOURCE`, `BOUNDARIES`, and `OUTPUT` constants:
-
-- `SOURCE`: directory containing city inventory CSV files named
-  `City_Final_*.csv`;
-- `BOUNDARIES`: this folder's `county_boundaries.geojson`;
-- `OUTPUT`: this folder's `naip_county_manifest.json`.
-
-Inventory files used by the builder must contain longitude and latitude in
-`longitude_coordinate`/`latitude_coordinate` or their plural variants. Then
-run from the repository root:
+The exact boundary file is checksum-frozen in
+`provenance/county_boundaries_provenance.json`. Its original source and vintage
+were not retained and are explicitly recorded as a legacy limitation.
 
 ```powershell
-python dataCollection\NAIP\build_county_manifest.py
+python dataCollectionPreprocessing/NAIP/build_county_manifest.py `
+  --source D:\urban_tree_data\inventories `
+  --boundaries dataCollectionPreprocessing/NAIP/county_boundaries.geojson `
+  --output D:\urban_tree_data\manifests\naip_county_manifest.json
 ```
 
-Review the reported unmatched points and confirm every new city has a unique
-entry in the script's `CODES` mapping.
+Inventory files must match `*_Final_*.csv` and contain longitude and latitude
+columns in the singular or plural naming supported by the script. Review all
+unmatched points and city/county assignments.
 
-## 2. Download paired county NAIP archives
-
-Use a dry run for one city first:
+## 2. Select and download paired archives
 
 ```powershell
-python dataCollection\NAIP\download_naip_paired_box.py `
-  --manifest dataCollection\NAIP\naip_county_manifest.json `
-  --output E:\NAIP_PAIRED `
+python dataCollectionPreprocessing/NAIP/download_naip_paired_box.py `
+  --manifest D:\urban_tree_data\manifests\naip_county_manifest.json `
+  --output D:\urban_tree_data\naip_paired `
+  --index-cache D:\urban_tree_data\manifests\naip_paired_box_index.json `
+  --selection-output D:\urban_tree_data\manifests\naip_paired_selection.json `
   --target-year 2022 `
   --year-window 6 `
+  --skip-city-code BAL `
+  --skip-city-code DCA `
   --test-city Atlanta `
   --dry-run
 ```
 
-Remove `--dry-run` to download that city. To download every city in the
-manifest:
+Remove `--test-city` and `--dry-run` for the complete paired download. The two
+explicit skip arguments correspond to the frozen single-multiband exceptions;
+they are not hidden in the code. Preserve each run's selection manifest.
+
+## 3. Create paired RGBNIR crops
 
 ```powershell
-python dataCollection\NAIP\download_naip_paired_box.py `
-  --manifest dataCollection\NAIP\naip_county_manifest.json `
-  --output E:\NAIP_PAIRED `
-  --target-year 2022 `
-  --year-window 6
-```
-
-Useful options:
-
-- `--city-code ATL` restricts processing by storage code and is repeatable;
-- `--state GA` restricts processing by state and is repeatable;
-- `--refresh-index` refreshes the cached Box archive listing;
-- `--headed` opens a visible browser for troubleshooting;
-- `--download-limit N` limits downloads during a test.
-
-Downloaded files are preserved as:
-
-```text
-E:\NAIP_PAIRED\<CITY_CODE>\*.zip
-```
-
-The downloader selects a same-county, same-year natural-color archive (`hn`
-or `nc`) and companion/CIR archive (`hc`).
-
-## 3. Create paired RGB plus NIR crown chips
-
-This is the standard path for cities downloaded through the paired archive
-workflow. The extractor resolves the city code through
-`naip_county_manifest.json`, pairs county archives by state/county/year,
-extracts their SID members when necessary, and tests overlapping pairs at each
-crown. The crop with the lowest blackout/whiteout saturation is retained.
-
-Run a small first-N test:
-
-```powershell
-python dataCollection\NAIP\extract_tree_id_centered_naip_crops.py `
+python dataCollectionPreprocessing/NAIP/extract_tree_id_centered_naip_crops.py `
   --city-token atlanta `
-  --join-root H:\TreeCenteredModelInputs\tree_to_detected_crowns_clean `
-  --naip-dir E:\NAIP_PAIRED `
-  --county-manifest dataCollection\NAIP\naip_county_manifest.json `
-  --output-dir H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean `
+  --join-root D:\urban_tree_data\tree_to_crowns `
+  --naip-dir D:\urban_tree_data\naip_paired `
+  --county-manifest D:\urban_tree_data\manifests\naip_county_manifest.json `
+  --output-dir D:\urban_tree_data\tree_centered_naip `
   --crop-size 64 `
   --crop-metres 38 `
+  --sid-selection-mode best-overlap `
   --max-records 100
 ```
 
-After inspecting the test output, remove `--max-records`. Multiple cities can
-be processed by repeating `--city-token`:
+Inspect this smoke test and remove `--max-records`. Repeat `--city-token` for
+multiple cities. Alternatively, use one `--join-csv` with exactly one city or
+provide a `--job-csv`. City discovery requires `--join-root`.
+
+## 4. Create single-multiband crops
 
 ```powershell
-python dataCollection\NAIP\extract_tree_id_centered_naip_crops.py `
-  --city-token atlanta `
-  --city-token denver `
-  --join-root H:\TreeCenteredModelInputs\tree_to_detected_crowns_clean `
-  --naip-dir E:\NAIP_PAIRED `
-  --county-manifest dataCollection\NAIP\naip_county_manifest.json `
-  --output-dir H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean `
-  --parallel-workers 2
-```
-
-If no `--city-token` is supplied, the extractor discovers cities from the
-join-root summary or city subdirectories. Use `--exclude-city-token` to skip
-specific cities.
-
-## 4. Create crown chips from single multiband rasters
-
-Use the 5-band extractor for cities whose imagery is stored in one multiband
-SID product rather than separate natural-color and companion archives. Run one
-city per command:
-
-```powershell
-python dataCollection\NAIP\extract_tree_id_centered_5band_naip_crops.py `
+python dataCollectionPreprocessing/NAIP/extract_tree_id_centered_5band_naip_crops.py `
   --city-token baltimore `
-  --join-csv H:\TreeCenteredModelInputs\tree_to_detected_crowns_clean\baltimore\baltimore_tree_to_nearest_detected_crown_5m.csv `
-  --naip-dir E:\NAIP_PAIRED\BAL `
+  --join-csv D:\urban_tree_data\tree_to_crowns\baltimore\baltimore_tree_to_nearest_detected_crown_5m.csv `
+  --naip-dir D:\urban_tree_data\naip_multiband\BAL `
+  --output-dir D:\urban_tree_data\tree_centered_naip `
   --sid-pattern *.sid `
   --bands 1,2,3,4 `
-  --output-dir H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean `
   --crop-size 64 `
   --crop-metres 38 `
+  --sid-selection-mode best-overlap `
   --max-records 100
 ```
 
-Remove `--max-records` for the full run. `--bands` is one-based and must list
-the source bands in output order: red, green, blue, NIR. ZIP archives beneath
-the selected city directory are searched and matching SID members are
-extracted automatically.
-
-Use `--source-epsg EPSG:...` only when `crown_epsg` should intentionally be
-overridden. Use `--sid-path-rewrite OLD=NEW` when
-running against legacy index files containing paths from another computer.
+Bands are one-based and ordered red, green, blue, NIR. Remove `--max-records`
+after validating the test output.
 
 ## Outputs and restart behavior
 
-Both extractors write one city directory containing:
+Each city directory contains a row-aligned `uint8` RGBNIR `.npy` array, a
+metadata CSV with tree/crown identifiers and raster/band/QA provenance, a run
+configuration JSON, and temporary progress files during incomplete runs.
+Completed outputs are protected unless `--force` is supplied.
 
-- `*_rgbnir_crops.npy`: `uint8` array shaped `(records, 64, 64, 4)` by default;
-- `*_metadata.csv`: row-aligned tree/crown metadata, source raster provenance,
-  crop QA metrics, and `crop_failed`;
-- `*_config.json`: inputs and settings used for the run;
-- `*_progress.json` and `*.partial.npy`: temporary restart files removed after
-  successful completion.
+## Frozen study provenance
 
-Default output root:
+The retained outputs were summarized with:
 
-```text
-H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean\<city>\
+```powershell
+python dataCollectionPreprocessing/NAIP/freeze_study_naip_provenance.py `
+  --crop-root D:\urban_tree_data\tree_centered_naip `
+  --boundaries dataCollectionPreprocessing/NAIP/county_boundaries.geojson `
+  --output-dir dataCollectionPreprocessing/NAIP/provenance
 ```
 
-Interrupted runs resume from their progress files. Existing completed outputs
-are protected; pass `--force` only when they should be regenerated.
+The source table removes workstation directory prefixes while preserving
+source filenames, roles, bands, cities, and selected-record counts. The study
+has 40 retained configurations: 38 paired and two single-multiband.
+The original mutable Box selection file was not retained, so the frozen tables
+identify the exact rasters actually read rather than attaching unverified
+current catalog URLs.
 
-## QA checks
+## QA checklist
 
-Before assembling model shards:
-
-1. Confirm the crop array and metadata CSV have the same number of rows.
-2. Confirm `tree_id` is unique and remains aligned with `crop_index`.
-3. Review `crop_failed`; investigate or exclude failed records.
-4. Review `crop_blackout_fraction`, `crop_whiteout_fraction`,
-   `crop_saturation_fraction`, and `crop_valid_fraction`.
-5. Visually inspect a sample in RGB and false-color NIR.
-6. Confirm source SID paths and band assignments are plausible for every city.
-
-Do not remove downloaded ZIP archives until crown crops and their metadata have
-been validated and backed up.
-
-## Inspection and QA utilities
-
-`inspect_sid_metadata.py` prints ArcPy raster, spatial-reference, and per-band
-statistics for a source SID file. It supports future source inspection but is
-not required for every crop-building run.
+1. Confirm arrays and metadata have identical row counts.
+2. Confirm unique `tree_id` values remain aligned with `crop_index`.
+3. Investigate or exclude `crop_failed` records.
+4. Review blackout, whiteout, saturation, and valid-pixel fractions.
+5. Inspect RGB and false-color NIR samples.
+6. Verify source rasters and bands for every city.
+7. Preserve archives, manifests, and configurations until outputs are backed up.

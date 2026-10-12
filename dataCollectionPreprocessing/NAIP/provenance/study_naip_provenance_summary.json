@@ -1,0 +1,13 @@
+{
+  "retained_configuration_count": 40,
+  "city_count": 40,
+  "source_formats": {
+    "paired_rgb_cir": 38,
+    "single_multiband": 2
+  },
+  "unique_city_source_raster_combinations": 155,
+  "cities_missing_retained_metadata": [],
+  "path_handling": "Source filenames are retained; workstation-specific directory prefixes are removed.",
+  "original_box_selection_manifest_retained": false,
+  "archive_provenance_basis": "Exact SID raster filenames and bands recorded in the completed crop metadata; current Box URLs are intentionally not substituted for the missing historical selection manifest."
+}
