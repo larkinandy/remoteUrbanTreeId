@@ -66,6 +66,13 @@
 !/dataCollectionPreprocessing/satelliteEmbeddings/provenance/
 !/dataCollectionPreprocessing/satelliteEmbeddings/provenance/**
 
+/dataCollectionPreprocessing/treeCrown/*.csv
+/dataCollectionPreprocessing/treeCrown/*.json
+/dataCollectionPreprocessing/treeCrown/**/*.csv
+/dataCollectionPreprocessing/treeCrown/**/*.json
+!/dataCollectionPreprocessing/treeCrown/provenance/
+!/dataCollectionPreprocessing/treeCrown/provenance/**
+
 # ignore generated figures and model outputs
 /figure_scripts/
 /outputs/

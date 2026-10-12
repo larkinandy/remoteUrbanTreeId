@@ -1,0 +1,29 @@
+{
+  "detector": {
+    "repository": "https://github.com/jonathanventura/urban-tree-detection.git",
+    "commit": "9d6916af97da62906004c63bf675558e3fb0368b",
+    "license": "MIT",
+    "model": "pretrained_rgbn",
+    "model_description": "60 cm NAIP, 2016-2020, RGBN, Northern and Southern California",
+    "download_url": "https://cpslo-my.sharepoint.com/:u:/g/personal/jventu09_calpoly_edu/ES31TXWdeGRFj_hn3O4qZpoBfhye_ssuULyaC2WB7yaJTw?e=cYkjMf",
+    "weights_file": "weights.best.h5",
+    "weights_bytes": 68447336,
+    "weights_sha256": "5CE98C07D26B1B15D82919C3C9662DEE2EA56B36B9EE652A38C9004B63B75AFE",
+    "params_file": "urban_tree_detector_params.yaml",
+    "params_sha256": "DA34AEDB9828A00BED3CA342C9604FB3DFE4545BD93FB0CBD2F7013D032E744F"
+  },
+  "inference": {
+    "bands": "RGBN",
+    "pixel_size_m": 0.6,
+    "default_batch_size": 128,
+    "output_coordinate_fields": ["approx_x", "approx_y", "cell_epsg"],
+    "confidence_field": "confidence"
+  },
+  "inventory_matching": {
+    "maximum_distance_m": 5.0,
+    "minimum_crown_confidence": 0.1,
+    "selection": "nearest qualifying crown",
+    "tree_assignment": "one crown per inventory record",
+    "crown_reuse": "allowed across inventory records"
+  }
+}
