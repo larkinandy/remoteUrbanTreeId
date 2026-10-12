@@ -1,0 +1,30 @@
+{
+  "artifact": "Frozen configuration for the final manuscript PRISM input",
+  "product": "daily",
+  "variables": ["ppt", "tmean", "vpdmax"],
+  "start_date": "2021-01-01",
+  "end_date": "2023-12-31",
+  "date_count": 1095,
+  "region": "conterminous United States",
+  "region_token": "us",
+  "resolution": "4km",
+  "filename_grid_token": "25m",
+  "time_series_kind": "an",
+  "time_series_kind_description": "all networks",
+  "source_status": "stable",
+  "sampling": "nearest containing PRISM grid cell calculated from the raster affine transform",
+  "nodata_handling": "non-finite values and the raster nodata value are marked false in valid_mask and stored as zero in values",
+  "storage_contract": "values[prism_pixel,date,variable]; per-city files map tree_id and Sentinel cell to prism_daily_source_row",
+  "model_join": "Daily PRISM values are appended only to retained Sentinel-2 observation dates during shard assembly.",
+  "units": {
+    "ppt": "millimetres",
+    "tmean": "degrees Celsius",
+    "vpdmax": "hectopascals as distributed by PRISM"
+  },
+  "coverage_exception": {
+    "city_token": "honolulu",
+    "records": 15428,
+    "valid_mappings": 0,
+    "reason": "Outside the retained conterminous-US PRISM grid. Records remain explicitly marked missing."
+  }
+}

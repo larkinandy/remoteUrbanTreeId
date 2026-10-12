@@ -1,0 +1,33 @@
+{
+  "prism_pixels": 1523,
+  "dates": 1095,
+  "variables": [
+    "ppt",
+    "tmean",
+    "vpdmax"
+  ],
+  "first_date": 20210101,
+  "last_date": 20231231,
+  "valid_value_percent": 100.0,
+  "reference_raster": {
+    "crs": "GEOGCS[\"NAD83\",DATUM[\"North American Datum 1983\",SPHEROID[\"GRS 1980\",6378137,298.257222101004]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AXIS[\"Latitude\",NORTH],AXIS[\"Longitude\",EAST]]",
+    "height": 621,
+    "nodata": -9999.0,
+    "transform": [
+      0.041666666667,
+      0.0,
+      -125.0208333333335,
+      0.0,
+      -0.041666666667,
+      49.9375000000005,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "width": 1405
+  },
+  "city_count": 63,
+  "tree_records": 3757164,
+  "valid_tree_mappings": 3741736,
+  "missing_tree_mappings": 15428
+}

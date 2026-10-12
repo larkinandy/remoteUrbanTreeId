@@ -40,8 +40,6 @@ from typing import Iterable
 
 HERE = Path(__file__).resolve().parent
 LIDAR_HELPER_DIR = HERE.parent / "LiDAR"
-DEFAULT_CELL_MAP_DIR = HERE.parent / "Sentinel2" / "mccoy_sentinel_10m_cells_utm"
-DEFAULT_OUTPUT_DIR = Path(r"E:\PRISM\sentinel_cells")
 DEFAULT_URL_TEMPLATES = {
     "daily": (
         "https://ftp.prism.oregonstate.edu/time_series/{region}/{time_series_kind}/{resolution}/{variable}/daily/{year}/"
@@ -81,8 +79,8 @@ def parse_args() -> argparse.Namespace:
     city_group.add_argument("--all-cities", action="store_true", help="Use every city in --cell-map-dir.")
     parser.add_argument("--exclude-city-token", action="append", default=[], help="City token/name to skip. Repeatable.")
 
-    parser.add_argument("--cell-map-dir", type=Path, default=DEFAULT_CELL_MAP_DIR)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--cell-map-dir", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--sentinel-cell-size", type=float, default=10.0)
     parser.add_argument("--sentinel-origin-x", type=float, default=0.0)
     parser.add_argument("--sentinel-origin-y", type=float, default=0.0)

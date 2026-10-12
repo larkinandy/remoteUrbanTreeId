@@ -1,0 +1,6 @@
+{
+  "archive_root_available": false,
+  "archive_count": 0,
+  "checksum_algorithm": "SHA-256",
+  "note": "Rerun without --allow-missing-archive-root when the retained archive volume is mounted."
+}

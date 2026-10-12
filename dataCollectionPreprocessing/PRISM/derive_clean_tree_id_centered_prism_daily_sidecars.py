@@ -36,10 +36,6 @@ else:
     RASTERIO_IMPORT_ERROR = None
 
 
-CLEAN_ROOT = Path(r"H:\TreeCenteredModelInputs")
-DEFAULT_LINK_ROOT = CLEAN_ROOT / "tree_record_metadata_clean"
-DEFAULT_RAW_ROOT = Path(r"E:\PRISM\sentinel_cells\raw\daily")
-DEFAULT_OUTPUT_DIR = CLEAN_ROOT / "tree_centered_prism_daily_clean"
 DEFAULT_VARIABLES = ("ppt", "tmean", "vpdmax")
 
 CITY_ALIASES = {
@@ -65,9 +61,9 @@ CITY_ALIASES = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--raw-root", type=Path, default=DEFAULT_RAW_ROOT)
-    parser.add_argument("--link-root", type=Path, default=DEFAULT_LINK_ROOT)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--raw-root", type=Path, required=True)
+    parser.add_argument("--link-root", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--city-token", action="append", default=[])
     parser.add_argument("--exclude-city-token", action="append", default=[])
     parser.add_argument("--variable", action="append", default=[])
@@ -323,8 +319,6 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     date_codes = np.asarray([int(current.strftime("%Y%m%d")) for current in dates], dtype=np.int32)
     config = {
-        "raw_root": str(Path(args.raw_root)),
-        "link_root": str(Path(args.link_root)),
         "start_date": str(dates[0]),
         "end_date": str(dates[-1]),
         "variables": list(variables),
@@ -388,7 +382,7 @@ def main() -> int:
                 "valid_tree_mappings": int((~missing).sum()),
                 "missing_tree_mappings": int(missing.sum()),
                 "unique_prism_pixels": int(len(np.unique(source_row[source_row >= 0]))),
-                "output": str(city_path),
+                "output": str(city_path.relative_to(output_dir)),
             }
         )
 
