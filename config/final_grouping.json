@@ -11,13 +11,14 @@
   "core_group_prototypes_file": "core_k11_group_prototypes.npz",
   "core_group_prototypes_sha256": "c154b1c754e1cd6593b6effba86bdbc851dd62a23a268afa7dee4af79de679a3",
   "collapse_artifact_file": "final_k11_to_k6_collapse.npz",
-  "collapse_artifact_sha256": "8b5f5dd2e785c4306869441fa7257d15dccd13772a19838efcc38af976cb1e31",
+  "collapse_artifact_sha256": "c6623e73100a95172f210d0c5ca2aa39f49894813cbf8b09f7b309f5343cf62f",
   "collapse_map_one_based": [1, 1, 2, 2, 3, 3, 4, 5, 3, 6, 2],
   "collapse_rule": "Sum the ensembled probabilities of intermediate classes assigned to each reported group, then select the largest collapsed probability.",
   "selection_data": "discriminator validation partition only",
   "independent_evaluation_data": "discriminator test partition",
   "notes": [
     "The 11 intermediate groups are model labels; the six reported groups are a fixed probability-sum collapse.",
+    "The balanced collapse was selected from the admissible validation candidates to limit the largest record and taxon shares while retaining comparable macro-F1 and minimum-group F1.",
     "Rare-taxon assignments were frozen from development-only taxon centroids before held-out evaluation.",
     "Group identifiers are arbitrary and do not represent botanical ranks or ecological functions."
   ]

@@ -116,6 +116,14 @@ def weighted_group_prototypes(
     return np.asarray(out)
 
 
+def nearest_prototype(embeddings: np.ndarray, prototypes: np.ndarray) -> np.ndarray:
+    """Return cosine-nearest prototypes without relying on a large BLAS call."""
+    scores = np.empty((len(embeddings), len(prototypes)), dtype=np.float64)
+    for group, prototype in enumerate(prototypes):
+        scores[:, group] = np.sum(embeddings * prototype, axis=1)
+    return np.argmax(scores, axis=1).astype(np.int64)
+
+
 def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -154,8 +162,8 @@ def main() -> None:
     prototypes_k6 = weighted_group_prototypes(taxon_centroids, assignment_k6, validation_counts, 6)
     true_k11 = assignment_k11[test_taxon_index]
     true_k6 = assignment_k6[test_taxon_index]
-    pred_k11 = np.argmax(test_embedding @ prototypes_k11.T, axis=1).astype(np.int64)
-    pred_k6_direct = np.argmax(test_embedding @ prototypes_k6.T, axis=1).astype(np.int64)
+    pred_k11 = nearest_prototype(test_embedding, prototypes_k11)
+    pred_k6_direct = nearest_prototype(test_embedding, prototypes_k6)
     pred_k6_hierarchical = k11_to_k6[pred_k11]
 
     evaluations = [

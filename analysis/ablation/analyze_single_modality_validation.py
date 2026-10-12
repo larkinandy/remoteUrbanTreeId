@@ -11,10 +11,20 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def provenance_path(path: Path) -> str:
+    """Return a repository-relative path or an external artifact basename."""
+    try:
+        return path.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return f"external://{path.name}"
+
 
 def args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
-    p.add_argument("--single-root", type=Path, default=Path(r"H:\k11_single_modality_results"))
+    p.add_argument("--single-root", type=Path, required=True)
     p.add_argument(
         "--reference",
         type=Path,
@@ -23,7 +33,8 @@ def args() -> argparse.Namespace:
     p.add_argument(
         "--collapse",
         type=Path,
-        default=Path("outputs/reviewer_revision/k11_loo_without_structure_top5_collapse_search_k6/selected_k6.npz"),
+        default=ROOT / "config" / "final_k11_to_k6_collapse.npz",
+        help="Frozen balanced 11-to-6 manuscript mapping.",
     )
     p.add_argument(
         "--output-dir",
@@ -129,7 +140,7 @@ def main() -> None:
         training_rows.append(
             {
                 "modality": modality,
-                "run_directory": str(directory),
+                "run_directory": provenance_path(directory),
                 "best_epoch_config": int(config["best_epoch"]),
                 "best_epoch_history": int(best["epoch"]),
                 "epochs_completed": int(history["epoch"].max()),
@@ -149,7 +160,7 @@ def main() -> None:
                 "unique_record_keys": len(np.unique(current_keys)),
                 "validation_only_pilot": config.get("validation_only_pilot"),
                 "test_evaluation_performed": config.get("test_evaluation_performed"),
-                "partition_path": config.get("partition_path"),
+                "partition_file": Path(config.get("partition_path", "unknown")).name,
                 "seed": config.get("args", {}).get("seed"),
                 "batch_size": config.get("args", {}).get("batch_size"),
             }
@@ -172,7 +183,8 @@ def main() -> None:
     metadata = {
         "completed_modalities": sorted(selected_dirs),
         "completed_count": len(selected_dirs),
-        "reference": str(a.reference),
+        "reference": provenance_path(a.reference),
+        "collapse_artifact": provenance_path(a.collapse),
         "collapse": collapse.tolist(),
         "evaluation_split": "validation",
         "reference_is_top5_ensemble": True,

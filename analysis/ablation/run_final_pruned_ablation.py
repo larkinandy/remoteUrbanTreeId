@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from workflow import canonical_collapse_map, validate_split_manifest
 
 ROOT = Path(__file__).resolve().parents[2]
 TRAINER = ROOT / "model" / "stage2" / "train_fixed_partition_classifier.py"
@@ -20,18 +21,17 @@ FINAL_MODALITIES = (
     "raw_sentinel",
     "satellite_embedding",
 )
-COLLAPSE_MAP = "1,1,2,2,3,3,4,5,3,6,2"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--modality", action="append", choices=FINAL_MODALITIES, help="Run only selected branches; repeat as needed.")
-    parser.add_argument("--complete-shard-root", type=Path, default=Path(r"H:\TreeCenteredModelInputs\tree_centered_complete_sharded100k_prism_daily3_clean"))
-    parser.add_argument("--prepared-mmap-root", type=Path, default=Path(r"H:\TreeCenteredModelInputs\tree_centered_prepared_float32_v1"))
+    parser.add_argument("--complete-shard-root", type=Path, required=True)
+    parser.add_argument("--prepared-mmap-root", type=Path, required=True)
     parser.add_argument("--species-partition", type=Path, default=ROOT / "config" / "final_k11_partition.npz")
-    parser.add_argument("--split-manifest", type=Path, default=ROOT / "artifacts" / "reviewer_stage2_loader_manifest.csv.gz")
-    parser.add_argument("--model-output-dir", type=Path, default=Path(r"H:\k11_final_pruned_ablation_mmap\models"))
-    parser.add_argument("--result-output-dir", type=Path, default=Path(r"H:\k11_final_pruned_ablation_mmap\results"))
+    parser.add_argument("--split-manifest", type=Path, required=True)
+    parser.add_argument("--model-output-dir", type=Path, required=True)
+    parser.add_argument("--result-output-dir", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=120)
     parser.add_argument("--early-stopping-patience", type=int, default=12)
     parser.add_argument("--batch-size", type=int, default=1024)
@@ -110,7 +110,7 @@ def evaluate_command(args: argparse.Namespace, model_run: Path, modality: str) -
         "--run-name", f"without_{modality}_test_top5", "--grouping-scheme", "species_partition",
         "--species-partition", str(args.species_partition), "--split-manifest", str(args.split_manifest),
         "--split", "test", "--batch-size", str(args.batch_size), "--num-workers", str(args.num_workers),
-        "--max-shard-cache", str(args.max_shard_cache), "--collapse-map", COLLAPSE_MAP,
+        "--max-shard-cache", str(args.max_shard_cache), "--collapse-map", canonical_collapse_map(),
         "--device", args.device, "--export-predictions",
     ]
     if args.force:
@@ -123,6 +123,7 @@ def main() -> int:
     for path in (TRAINER, EVALUATOR, args.complete_shard_root, args.prepared_mmap_root, args.species_partition, args.split_manifest):
         if not path.exists():
             raise FileNotFoundError(path)
+    validate_split_manifest(args.split_manifest)
     targets = args.modality or list(FINAL_MODALITIES)
     if not args.dry_run:
         args.model_output_dir.mkdir(parents=True, exist_ok=True)

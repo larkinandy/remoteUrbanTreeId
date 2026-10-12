@@ -9,6 +9,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def provenance_path(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return f"external://{path.name}"
+
 
 def args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
@@ -102,7 +111,7 @@ def main() -> None:
     summary.to_csv(a.output_dir / "paired_bootstrap_summary.csv", index=False)
     np.savez_compressed(a.output_dir / "paired_bootstrap_replicates.npz", differences=differences, metric_names=np.asarray(names))
     with open(a.output_dir / "method.json", "w", encoding="utf-8") as f:
-        json.dump({"replicates": a.replicates, "seed": a.seed, "resampling": "paired Poisson(1) record bootstrap", "full": str(a.full), "ablation": str(a.ablation), "collapse_map": a.collapse_map}, f, indent=2)
+        json.dump({"replicates": a.replicates, "seed": a.seed, "resampling": "paired Poisson(1) record bootstrap", "full": provenance_path(a.full), "ablation": provenance_path(a.ablation), "collapse_map": a.collapse_map}, f, indent=2)
     print(summary.to_string(index=False), flush=True)
 
 

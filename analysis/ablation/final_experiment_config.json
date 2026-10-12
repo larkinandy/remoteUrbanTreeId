@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "label_space": "config/final_k11_partition.npz",
+  "collapse_artifact": "config/final_k11_to_k6_collapse.npz",
+  "seed": 13,
+  "modalities": [
+    "tree_centered_naip",
+    "tree_centered_chm",
+    "tree_centered_structure",
+    "naip_chm_interaction",
+    "sentinel_phenology",
+    "raw_sentinel",
+    "satellite_embedding"
+  ],
+  "final_pruned_modalities": [
+    "tree_centered_naip",
+    "tree_centered_chm",
+    "naip_chm_interaction",
+    "sentinel_phenology",
+    "raw_sentinel",
+    "satellite_embedding"
+  ],
+  "pruned_modalities": ["tree_centered_structure"],
+  "training": {
+    "epochs": 120,
+    "early_stopping_patience": 12,
+    "early_stopping_min_delta": 0.0001,
+    "checkpoint_selection_score": "blended",
+    "blended_score_weights": {"macro_f1": 0.5, "accuracy": 0.3, "weighted_f1": 0.2},
+    "top_k_checkpoints": 5,
+    "batch_size": 1024,
+    "hidden_dim": 128,
+    "dropout": 0.2,
+    "learning_rate": 0.0005,
+    "weight_decay": 0.0001,
+    "gradient_clip": 2.0,
+    "class_weighting": "sqrt_inverse",
+    "class_weight_max": 3.0
+  },
+  "architecture": {
+    "image_center_crop_pixels": 28,
+    "raster_normalization": "group",
+    "interaction_fusion_mode": "learned_common_grid",
+    "interaction_naip_crop_pixels": 30,
+    "interaction_naip_patch_pixels": 5,
+    "interaction_chm_patch_pixels": 3
+  },
+  "sampling": {
+    "exclude_qa_from_model": true,
+    "exclude_qa_warning_from_model": false,
+    "use_qa_sample_weights": true,
+    "low_center_vegetation_weight": 0.25,
+    "low_vegetated_height_with_lidar_weight": 0.5,
+    "insufficient_lidar_coverage_weight": 0.75,
+    "use_distance_sample_weights": true,
+    "distance_weight_sigma_m": 4.0,
+    "minimum_distance_sample_weight": 0.25
+  },
+  "interpretation": {
+    "leave_one_out": "Marginal contribution conditional on all retained branches.",
+    "single_modality": "Predictive sufficiency of an individual branch.",
+    "gate_weights": "Sample-dependent fusion weights; not causal feature importance."
+  }
+}
