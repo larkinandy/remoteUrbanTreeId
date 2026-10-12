@@ -46,6 +46,25 @@ conda activate treeid-lidar
 The TNM discovery and download steps require internet access. Product creation
 is local once the LAZ files have been downloaded.
 
+## Configuration and path handling
+
+Scientific parameters and filesystem locations are intentionally handled
+separately:
+
+- `provenance/study_lidar_configuration.json` freezes the scientific and
+  processing choices used in the manuscript, including project-year and
+  coverage criteria, raster dimensions, point classifications, vertical-unit
+  handling, and structure-feature thresholds.
+- Input and output locations are runtime concerns. The scripts do not assume
+  workstation drive letters or storage layouts; all data roots, manifests,
+  summaries, and output destinations must be supplied as command-line
+  arguments.
+- Paths shown below under `D:\urban_tree_data` are illustrative. They are not
+  defaults and may be replaced with any local or mounted storage location.
+
+This separation allows the published study parameters to remain fixed while
+the workflow is run on systems with different storage layouts.
+
 ## Workflow overview
 
 ```mermaid
