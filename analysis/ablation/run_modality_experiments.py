@@ -13,17 +13,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+from workflow import validate_split_manifest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 TRAINER = ROOT / "model" / "stage2" / "train_fixed_partition_classifier.py"
-DEFAULT_SHARDS = Path(r"H:\TreeCenteredModelInputs\tree_centered_complete_sharded100k_prism_daily3_clean")
-DEFAULT_OUTPUT = Path(r"H:\TreeCenteredModelInputs\collapsed_group_models_clean\reviewer_revision\k11_modality_experiments_v1")
-DEFAULT_PREPARED_MMAP = Path(r"H:\TreeCenteredModelInputs\tree_centered_prepared_float32_v1")
 DEFAULT_PARTITION = ROOT / "config" / "final_k11_partition.npz"
-DEFAULT_SPLITS = (
-    ROOT / "outputs" / "reviewer_revision" / "stage2_partitions_k11_groupnorm_v1"
-    / "reviewer_stage2_loader_manifest.csv.gz"
-)
 
 MODALITIES = (
     "tree_centered_naip",
@@ -43,11 +38,11 @@ def parse_args() -> argparse.Namespace:
         "--modality", action="append", choices=MODALITIES,
         help="Run only this target modality; repeat to queue several. Omit to run all seven.",
     )
-    parser.add_argument("--complete-shard-root", type=Path, default=DEFAULT_SHARDS)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--prepared-mmap-root", type=Path, default=DEFAULT_PREPARED_MMAP)
+    parser.add_argument("--complete-shard-root", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--prepared-mmap-root", type=Path, required=True)
     parser.add_argument("--species-partition", type=Path, default=DEFAULT_PARTITION)
-    parser.add_argument("--split-manifest", type=Path, default=DEFAULT_SPLITS)
+    parser.add_argument("--split-manifest", type=Path, required=True)
     parser.add_argument("--run-suffix", default="v1")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--dry-run", action="store_true")
@@ -162,6 +157,7 @@ def main() -> int:
     ):
         if not path.exists():
             raise FileNotFoundError(f"Missing {label}: {path}")
+    validate_split_manifest(args.split_manifest)
     targets = args.modality or list(MODALITIES)
     if not args.dry_run:
         args.output_dir.mkdir(parents=True, exist_ok=True)

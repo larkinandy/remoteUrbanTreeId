@@ -11,11 +11,26 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def provenance_path(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return f"external://{path.name}"
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--single-root", type=Path, default=Path("outputs/reviewer_revision/k11_single_modality_test_inference"))
     parser.add_argument("--reference", type=Path, default=Path("outputs/reviewer_revision/final_pruned_k11_test_top5_ensemble/ensemble_predictions.npz"))
+    parser.add_argument(
+        "--collapse",
+        type=Path,
+        default=ROOT / "config" / "final_k11_to_k6_collapse.npz",
+        help="Frozen balanced 11-to-6 manuscript mapping.",
+    )
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/reviewer_revision/k11_single_modality_test_analysis"))
     return parser.parse_args()
 
@@ -85,13 +100,13 @@ def evaluate(
 def main() -> int:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    summary_rows, group_tables, reference = evaluate(args.reference, "final_pruned_multimodal_top5_ensemble")
-    collapse = np.empty(len(reference["groups"]), dtype=np.int64)
-    for group in range(len(collapse)):
-        destinations = np.unique(reference["collapsed_labels"][reference["labels"] == group])
-        if len(destinations) != 1:
-            raise ValueError(f"Reference collapse is not deterministic for k11 group {group + 1}: {destinations}")
-        collapse[group] = destinations[0]
+    with np.load(args.collapse, allow_pickle=True) as artifact:
+        collapse = np.asarray(artifact["initial_group_assignment"], dtype=np.int64)
+    summary_rows, group_tables, reference = evaluate(
+        args.reference, "final_pruned_multimodal_top5_ensemble", collapse
+    )
+    if len(collapse) != len(reference["groups"]):
+        raise ValueError("Frozen collapse map does not match the reference class count")
     audits = []
     for directory in sorted(path for path in args.single_root.iterdir() if path.is_dir()):
         prediction = directory / "ensemble_predictions.npz"
@@ -100,12 +115,6 @@ def main() -> int:
         rows, tables, current = evaluate(prediction, directory.name, collapse)
         summary_rows.extend(rows)
         group_tables.extend(tables)
-        corrected = {
-            "source_predictions": str(prediction),
-            "collapse_map_zero_based": collapse.tolist(),
-            **{key: value for key, value in rows[1].items() if key not in {"modality", "label_space"}},
-        }
-        (directory / "balanced_k6_metrics.json").write_text(json.dumps(corrected, indent=2), encoding="utf-8")
         audit = {
             "modality": directory.name,
             "records": len(current["keys"]),
@@ -134,7 +143,8 @@ def main() -> int:
         "evaluation_split": "independent test",
         "single_modality_checkpoint_count": len(audits),
         "test_records": int(len(reference["keys"])),
-        "reference": str(args.reference),
+        "reference": provenance_path(args.reference),
+        "collapse_artifact": provenance_path(args.collapse),
         "collapse_map_zero_based": collapse.tolist(),
         "all_comparability_checks_passed": True,
     }

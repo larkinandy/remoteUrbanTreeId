@@ -1,0 +1,15 @@
+{
+  "file_name": "reviewer_stage2_loader_manifest.csv.gz",
+  "sha256": "d69b208294779d60fae94f3938fac39735baaf016c7a158be73642141a55bc45",
+  "records": 1851968,
+  "columns": ["record_key", "split"],
+  "record_key_definition": "city_token|tree_id|crop_index",
+  "allowed_split_values": ["train", "val", "test"],
+  "required_for": [
+    "final model",
+    "leave-one-modality-out models",
+    "single-modality models",
+    "sequential pruning models"
+  ],
+  "distribution": "External study data artifact; verify this checksum before training or evaluation."
+}

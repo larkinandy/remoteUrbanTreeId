@@ -8,6 +8,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from workflow import canonical_collapse_map, validate_split_manifest
+
+ROOT = Path(__file__).resolve().parents[2]
+
 
 MODELS = {
     "naip_chm_interaction": "k11_single_naip_chm_interaction_v2",
@@ -22,16 +26,16 @@ MODELS = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model-root", type=Path, default=Path(r"H:\k11_single_modality_results"))
+    parser.add_argument("--model-root", type=Path, required=True)
     parser.add_argument(
         "--complete-shard-root",
         type=Path,
-        default=Path(r"H:\TreeCenteredModelInputs\tree_centered_complete_sharded100k_prism_daily3_clean"),
+        required=True,
     )
     parser.add_argument(
         "--prepared-mmap-root",
         type=Path,
-        default=Path(r"H:\TreeCenteredModelInputs\tree_centered_prepared_float32_v1"),
+        required=True,
     )
     parser.add_argument(
         "--partition",
@@ -41,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--split-manifest",
         type=Path,
-        default=Path("outputs/reviewer_revision/k11_single_modality_worker_bundle/artifacts/reviewer_stage2_loader_manifest.csv.gz"),
+        required=True,
     )
     parser.add_argument(
         "--output-root",
@@ -56,7 +60,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    evaluator = Path(__file__).resolve().parents[2] / "model" / "stage2" / "evaluate_checkpoint_ensemble.py"
+    validate_split_manifest(args.split_manifest)
+    evaluator = ROOT / "model" / "stage2" / "evaluate_checkpoint_ensemble.py"
     args.output_root.mkdir(parents=True, exist_ok=True)
     for index, (modality, directory_name) in enumerate(MODELS.items(), start=1):
         model_dir = args.model_root / directory_name
@@ -79,7 +84,7 @@ def main() -> int:
             "--species-partition", str(args.partition),
             "--split-manifest", str(args.split_manifest),
             "--split", "test",
-            "--collapse-map", "1,1,2,2,3,3,4,5,3,6,2",
+            "--collapse-map", canonical_collapse_map(),
             "--batch-size", str(args.batch_size),
             "--num-workers", str(args.num_workers),
             "--device", "cuda",
