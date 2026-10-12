@@ -19,6 +19,8 @@ than an isolated measurement of an individual crown.
 | `sentinel_cell_features.py` | Shared reflectance-band, spectral-index, masking, and aggregation logic. |
 | `sentinel_phenology_metrics.py` | Shared phenology feature definitions and calculations. |
 | `sentinel_schema.py` | Canonical sequence schema shared with model-shard assembly. |
+| `sentinel_common.py` | Shared city-token, date-window, and file-discovery utilities. |
+| `sentinel_export_inventory.py` | Raw-export inventory and batch-completeness checks. |
 | `freeze_study_sentinel2_provenance.py` | Freeze path-independent sidecar summaries. |
 | `environment-sentinel2.yml` | Reproducible preprocessing environment. |
 | `provenance/` | Frozen study configuration and output summaries. |
@@ -104,10 +106,10 @@ B11, and B12; SCL is retained for QA.
 ```powershell
 python dataCollectionPreprocessing/Sentinel2/derive_tree_centered_sentinel_phenology.py `
   --record-index-root "$DATA_ROOT/record_index" `
-  --original-timeseries-dir "$DATA_ROOT/sentinel2/original_timeseries" `
-  --supplemental-timeseries-dir "$DATA_ROOT/sentinel2/supplemental_timeseries" `
-  --original-raw-sentinel-dir "$DATA_ROOT/sentinel2/raw_original" `
-  --additional-raw-sentinel-dir "$DATA_ROOT/sentinel2/raw_supplemental" `
+  --original-timeseries-root "$DATA_ROOT/sentinel2/original_timeseries" `
+  --supplemental-timeseries-root "$DATA_ROOT/sentinel2/supplemental_timeseries" `
+  --original-raw-sentinel-root "$DATA_ROOT/sentinel2/raw_original" `
+  --additional-raw-sentinel-root "$DATA_ROOT/sentinel2/raw_supplemental" `
   --missing-raw-cell-root "$DATA_ROOT/sentinel2/missing_cells" `
   --timeseries-output-root "$DATA_ROOT/sentinel2/regular_timeseries" `
   --output-root "$DATA_ROOT/sentinel2/intermediate_phenology" `
