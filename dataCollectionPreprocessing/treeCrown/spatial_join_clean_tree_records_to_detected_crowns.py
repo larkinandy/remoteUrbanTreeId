@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
-"""Join clean tree inventory records to nearest detected crown within a radius.
+"""Join clean inventory records to nearest detected crown-center points.
 
-Inputs are the rebuilt standalone products:
-
-* per-city clean inventory metadata keyed by tree_id
-* per-city detected crown CSVs with projected approx_x/approx_y coordinates
-
-The output is intentionally pre-Sentinel: it links tree records to detected
-crowns only. Sentinel/GEE/PRISM linkage should be assigned from the matched
-crown coordinate in a later step.
+The input points are detector maxima, not individual-crown segmentations or
+polygon boundaries.
 """
 
 from __future__ import annotations
@@ -23,6 +17,8 @@ import numpy as np
 import pandas as pd
 from pyproj import Transformer
 from scipy.spatial import cKDTree
+
+from tree_crown_common import normalize_city_token
 
 
 CROWN_OUTPUT_COLUMNS = [
@@ -76,14 +72,14 @@ def read_kept_cities(summary_path: Path) -> list[str]:
         ~summary["fails_unique_coordinate_threshold"].fillna(False).astype(bool),
         "city_token",
     ]
-    return sorted(str(value).strip().lower() for value in keep if str(value).strip())
+    return sorted(normalize_city_token(value) for value in keep if normalize_city_token(value))
 
 
 def discover_jobs(args: argparse.Namespace) -> list[CityJob]:
     summary_path = args.tree_metadata_root / "tree_record_metadata_clean_summary.csv"
     city_tokens = read_kept_cities(summary_path)
-    selected = {token.strip().lower() for token in args.city_token or [] if token.strip()}
-    excluded = {token.strip().lower() for token in args.exclude_city_token if token.strip()}
+    selected = {normalize_city_token(token) for token in args.city_token or [] if normalize_city_token(token)}
+    excluded = {normalize_city_token(token) for token in args.exclude_city_token if normalize_city_token(token)}
     if selected:
         city_tokens = [city for city in city_tokens if city in selected]
     city_tokens = [city for city in city_tokens if city not in excluded]
@@ -153,7 +149,8 @@ def empty_match_frame(trees: pd.DataFrame) -> pd.DataFrame:
 
 def match_city(job: CityJob, args: argparse.Namespace) -> dict[str, object]:
     if job.output_csv.exists() and not args.overwrite:
-        existing_rows = sum(1 for _ in open(job.output_csv, "rb")) - 1
+        with job.output_csv.open("rb") as stream:
+            existing_rows = sum(1 for _ in stream) - 1
         return {
             "city_token": job.city_token,
             "status": "exists",

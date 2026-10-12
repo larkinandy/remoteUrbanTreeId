@@ -1,7 +1,9 @@
-# Tree-crown detection and inventory matching
+# Crown-center detection and inventory matching
 
-This folder reproduces the boundary between high-resolution crown detection
-and the clean municipal inventory records used by the crown-centered model.
+This folder reproduces the boundary between high-resolution crown-center
+detection and the clean municipal inventory records used by the crown-centered
+model. It detects likely tree-center points; it does not produce reliable
+individual-crown polygons or perform individual-crown segmentation.
 
 <img src="https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/treeCrown.png" width="800">
 
@@ -85,6 +87,25 @@ The resulting join tables are consumed by
 `dataCollectionPreprocessing/NAIP/extract_tree_id_centered_naip_crops.py`, which
 centers final NAIP samples on detected crown coordinates. Do not substitute the
 original inventory coordinates when reproducing the study inputs.
+
+## Validate generated products
+
+The validator checks crown and match schemas, finite projected coordinates,
+EPSG codes, genuine-versus-proxy confidence flags, the 5 m distance bound,
+the 0.10 confidence threshold, unique inventory `tree_id` values, and agreement
+with the frozen city counts. It reports many-to-one crown reuse without treating
+that documented policy as an error.
+
+```powershell
+python dataCollectionPreprocessing/treeCrown/validate_tree_crown_products.py `
+  --crown-root $DATA_ROOT/detected_tree_crowns `
+  --match-root $DATA_ROOT/tree_to_detected_crowns `
+  --frozen-summary dataCollectionPreprocessing/treeCrown/provenance/tree_crown_city_summary.csv `
+  --summary $DATA_ROOT/reports/tree_crown_validation.csv
+```
+
+Generated summaries contain only portable filenames and city identifiers; they
+do not store absolute input or output paths.
 
 ## Frozen study summary
 
