@@ -1,0 +1,13 @@
+name: treeid-lidar
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - numpy=2.2
+  - pandas=2.3
+  - pyproj=3.7.2
+  - laspy=2.7.0
+  - lazrs-python=0.8.1
+
+# ArcPy-dependent upstream GIS preprocessing is not covered by this file.
+# It was run with the Python environment bundled with ArcGIS Pro 3.6.

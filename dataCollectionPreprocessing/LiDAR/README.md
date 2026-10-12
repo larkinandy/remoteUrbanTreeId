@@ -15,25 +15,32 @@ products centered on identified tree crowns.
 | `build_tnm_lidar_download_manifest.py` | Queries The National Map (TNM), evaluates city coverage, selects suitable LiDAR projects, and writes download manifests. |
 | `download_tnm_lidar_manifest.py` | Downloads the LAZ files in the manifest with restartable, bounded parallelism. |
 | `create_tree_centered_lidar_crop_products_laspy_pipeline.py` | Creates crown-centered DTM, DSM, CHM, and point-count products from downloaded LAZ/LAS files. |
+| `derive_clean_tree_id_centered_chm_structure_sidecars.py` | Aligns NAIP crops with CHM rasters and calculates the 114 structure features consumed during shard assembly. |
+| `naip_chm_structure_metrics.py` | Shared definitions and calculations for the 114 NAIP/CHM structure features. |
 | `tree_centered_lidar_utils.py` | Shared manifest, CRS, vertical-unit, memmap, and output utilities. This module is imported by the product generator and is not run directly. |
+| `provenance/study_lidar_configuration.json` | Frozen parameters used for the study workflow. |
+| `provenance/` | Frozen configuration, tile, city, and project records describing the LiDAR inputs actually used. |
+| `build_frozen_study_provenance.py` | Rebuilds the frozen provenance tables from retained bin-state and final LiDAR-index files. |
 
-Generated manifests, status files, summaries, `__pycache__`, and `.pyc` files
-are not source code and can be regenerated.
+Transient query manifests, download status files, run summaries, `__pycache__`,
+and `.pyc` files are generated and ignored. Files under `provenance/` are
+frozen study records and are intentionally version controlled.
 
 ## Requirements
 
-Use a Python environment containing:
+Two environments were used:
 
-- Python 3.10 or newer;
-- NumPy and pandas;
-- laspy with a LAZ backend such as `lazrs`;
-- pyproj;
-- sufficient disk space for downloaded LAZ files and intermediate memmaps.
+- Upstream GIS operations were run with the Python environment bundled with
+  **ArcGIS Pro 3.6**, including ArcPy. ArcPy is licensed software and cannot be
+  installed by this repository's Conda files.
+- TNM discovery, download management, laspy-first binning, CHM derivation, and
+  structure-sidecar construction can be run with `environment-lidar.yml`.
 
-Example installation:
+Create the open-source LiDAR environment with:
 
 ```powershell
-python -m pip install numpy pandas laspy lazrs pyproj
+conda env create --file dataCollectionPreprocessing/LiDAR/environment-lidar.yml
+conda activate treeid-lidar
 ```
 
 The TNM discovery and download steps require internet access. Product creation
@@ -53,15 +60,55 @@ flowchart TD
     H --> I["LiDAR index and run summary"]
 ```
 
+## Frozen study provenance
+
+The parameters used for the manuscript are recorded in
+`provenance/study_lidar_configuration.json`. The `provenance/` directory contains:
+
+- `frozen_study_lidar_tile_manifest.csv`: the 8,023 tile filenames actually
+  read by the completed study binning runs, together with city, project,
+  preference rank, relative path, and retained file size;
+- `frozen_study_lidar_city_summary.csv`: the 36 city-level project selections
+  represented in the final CHM products;
+- `frozen_study_lidar_project_table.csv`: a compact publication-facing table
+  of acquisition year, record support, tile count, and vertical scaling.
+
+The original manifest was a mutable download-management file: its status,
+attempt, timestamp, and local-path columns changed while downloads ran. That
+mutable file was not retained. The frozen tables were reconstructed from the
+completed bin-state files and final per-record LiDAR indexes, so they preserve
+the exact tile filenames and project assignments used to create the study
+products. Their URL column is intentionally blank rather than populated with
+unverified current catalog URLs. A fresh TNM query can create a downloadable
+manifest, but live catalog results may change over time.
+
 ## Inputs
+
+### Dependencies on other repository workflows
+
+All scripts required to create the LiDAR pipeline inputs are included:
+
+1. `Sentinel2/reduce_tree_points_to_sentinel_cells.py` creates the city-level
+   Sentinel-cell coverage tables used for TNM discovery.
+2. `NAIP/build_county_manifest.py` creates `naip_county_manifest.json`, which
+   supplies canonical city names and codes.
+3. `NAIP/extract_tree_id_centered_naip_crops.py` creates the tree-centered NAIP
+   crops and coordinate metadata used as LiDAR raster footprints.
+4. This folder discovers/downloads LiDAR, creates DTM/DSM/CHM products, and
+   derives structure sidecars.
+5. `shard/assemble_clean_tree_id_centered_model_input_shards.py` consumes the
+   resulting sidecars during model-input assembly.
+
+Large generated coverage tables, imagery, LAZ files, and model arrays are not
+stored in Git. Their locations must be passed explicitly to each script.
 
 ### Coverage inputs for TNM discovery
 
 The current manifest builder expects:
 
 - city coverage tables beneath
-  `dataCollection/Sentinel2/mccoy_sentinel_10m_cells_utm/<city>/`;
-- `dataCollection/NAIP/naip_county_manifest.json` for city names and
+  `dataCollectionPreprocessing/Sentinel2/mccoy_sentinel_10m_cells_utm/<city>/`;
+- `dataCollectionPreprocessing/NAIP/naip_county_manifest.json` for city names and
   three-letter codes.
 
 These coverage tables are used only to select TNM projects and LAZ tiles. They
@@ -69,10 +116,11 @@ are not used as model records or LiDAR chip centers.
 
 ### Crown metadata for product creation
 
-The product generator reads one metadata CSV per city from:
+The product generator reads one metadata CSV per city beneath the directory
+passed with `--crop-root`:
 
 ```text
-H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean\<city>\
+<crop-root>\<city>\
   <city>_tree_id_centered_nearest_64px_metadata.csv
 ```
 
@@ -99,10 +147,13 @@ The clean NAIP crown extractor produces metadata matching this contract.
 Begin with one city and a dry run:
 
 ```powershell
-python dataCollection\LiDAR\build_tnm_lidar_download_manifest.py `
-  --cell-map-dir dataCollection\Sentinel2\mccoy_sentinel_10m_cells_utm `
-  --city-manifest dataCollection\NAIP\naip_county_manifest.json `
-  --lidar-root E:\LiDAR `
+python dataCollectionPreprocessing\LiDAR\build_tnm_lidar_download_manifest.py `
+  --cell-map-dir dataCollectionPreprocessing\Sentinel2\mccoy_sentinel_10m_cells_utm `
+  --city-manifest dataCollectionPreprocessing\NAIP\naip_county_manifest.json `
+  --lidar-root D:\urban_tree_data\lidar `
+  --output-csv D:\urban_tree_data\manifests\tnm_lidar_download_manifest.csv `
+  --output-json D:\urban_tree_data\manifests\tnm_lidar_download_manifest.json `
+  --city-summary-csv D:\urban_tree_data\manifests\tnm_lidar_download_city_summary.csv `
   --city-token atlanta `
   --dry-run
 ```
@@ -110,13 +161,13 @@ python dataCollection\LiDAR\build_tnm_lidar_download_manifest.py `
 Generate the manifest after reviewing project age and coverage:
 
 ```powershell
-python dataCollection\LiDAR\build_tnm_lidar_download_manifest.py `
-  --cell-map-dir dataCollection\Sentinel2\mccoy_sentinel_10m_cells_utm `
-  --city-manifest dataCollection\NAIP\naip_county_manifest.json `
-  --lidar-root E:\LiDAR `
-  --output-csv dataCollection\LiDAR\tnm_lidar_download_manifest.csv `
-  --output-json dataCollection\LiDAR\tnm_lidar_download_manifest.json `
-  --city-summary-csv dataCollection\LiDAR\tnm_lidar_download_city_summary.csv
+python dataCollectionPreprocessing\LiDAR\build_tnm_lidar_download_manifest.py `
+  --cell-map-dir dataCollectionPreprocessing\Sentinel2\mccoy_sentinel_10m_cells_utm `
+  --city-manifest dataCollectionPreprocessing\NAIP\naip_county_manifest.json `
+  --lidar-root D:\urban_tree_data\lidar `
+  --output-csv D:\urban_tree_data\manifests\tnm_lidar_download_manifest.csv `
+  --output-json D:\urban_tree_data\manifests\tnm_lidar_download_manifest.json `
+  --city-summary-csv D:\urban_tree_data\manifests\tnm_lidar_download_city_summary.csv
 ```
 
 Important selection options:
@@ -132,7 +183,7 @@ Important selection options:
 - `--max-tiles-per-city`: cap tiles during a smoke test;
 - `--no-verify-tls`: troubleshooting option for environments with TLS issues.
 
-Review `tnm_lidar_download_city_summary.csv` before downloading. Confirm:
+Review the generated city summary before downloading. Confirm:
 
 1. the selected project year is acceptable;
 2. coverage is sufficient for the intended crowns;
@@ -144,9 +195,10 @@ Review `tnm_lidar_download_city_summary.csv` before downloading. Confirm:
 Inspect the queue without downloading:
 
 ```powershell
-python dataCollection\LiDAR\download_tnm_lidar_manifest.py `
-  --manifest dataCollection\LiDAR\tnm_lidar_download_manifest.csv `
-  --lidar-root E:\LiDAR `
+python dataCollectionPreprocessing\LiDAR\download_tnm_lidar_manifest.py `
+  --manifest D:\urban_tree_data\manifests\tnm_lidar_download_manifest.csv `
+  --status-json D:\urban_tree_data\manifests\tnm_lidar_download_status.json `
+  --lidar-root D:\urban_tree_data\lidar `
   --city-token atlanta `
   --max-downloads 5 `
   --dry-run
@@ -155,10 +207,10 @@ python dataCollection\LiDAR\download_tnm_lidar_manifest.py `
 Download one city:
 
 ```powershell
-python dataCollection\LiDAR\download_tnm_lidar_manifest.py `
-  --manifest dataCollection\LiDAR\tnm_lidar_download_manifest.csv `
-  --status-json dataCollection\LiDAR\tnm_lidar_download_status.json `
-  --lidar-root E:\LiDAR `
+python dataCollectionPreprocessing\LiDAR\download_tnm_lidar_manifest.py `
+  --manifest D:\urban_tree_data\manifests\tnm_lidar_download_manifest.csv `
+  --status-json D:\urban_tree_data\manifests\tnm_lidar_download_status.json `
+  --lidar-root D:\urban_tree_data\lidar `
   --city-token atlanta `
   --workers 4 `
   --per-city 2 `
@@ -177,10 +229,10 @@ The downloader:
 - periodically writes `tnm_lidar_download_status.json`;
 - can resume partial HTTP downloads with `--resume-partial`.
 
-Downloaded files default to:
+Downloaded files are written beneath the explicitly supplied LiDAR root:
 
 ```text
-E:\LiDAR\<relative_path from manifest>
+<lidar-root>\<relative_path from manifest>
 ```
 
 Avoid `--overwrite` unless existing LAZ files are known to be corrupt.
@@ -197,12 +249,13 @@ The product generator has two stages:
 Start with one city, a small record limit, and a tile limit:
 
 ```powershell
-python dataCollection\LiDAR\create_tree_centered_lidar_crop_products_laspy_pipeline.py `
-  --manifest dataCollection\LiDAR\tnm_lidar_download_manifest.csv `
-  --city-summary dataCollection\LiDAR\tnm_lidar_download_city_summary.csv `
-  --crop-root H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean `
-  --lidar-root E:\LiDAR `
-  --output-root H:\TreeCenteredModelInputs\tree_centered_lidar_products_clean `
+python dataCollectionPreprocessing\LiDAR\create_tree_centered_lidar_crop_products_laspy_pipeline.py `
+  --manifest D:\urban_tree_data\manifests\tnm_lidar_download_manifest.csv `
+  --city-summary D:\urban_tree_data\manifests\tnm_lidar_download_city_summary.csv `
+  --crop-root D:\urban_tree_data\tree_centered_naip_crops `
+  --lidar-root D:\urban_tree_data\lidar `
+  --output-root D:\urban_tree_data\tree_centered_lidar_products `
+  --run-summary D:\urban_tree_data\manifests\tree_centered_lidar_run_summary.csv `
   --city-token atlanta `
   --max-records 100 `
   --max-tiles 2 `
@@ -215,13 +268,14 @@ city without `--max-records` and `--max-tiles` in a clean output directory.
 ## 4. Create full crown-centered products
 
 ```powershell
-python dataCollection\LiDAR\create_tree_centered_lidar_crop_products_laspy_pipeline.py `
+python dataCollectionPreprocessing\LiDAR\create_tree_centered_lidar_crop_products_laspy_pipeline.py `
   --stage all `
-  --manifest dataCollection\LiDAR\tnm_lidar_download_manifest.csv `
-  --city-summary dataCollection\LiDAR\tnm_lidar_download_city_summary.csv `
-  --crop-root H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean `
-  --lidar-root E:\LiDAR `
-  --output-root H:\TreeCenteredModelInputs\tree_centered_lidar_products_clean `
+  --manifest D:\urban_tree_data\manifests\tnm_lidar_download_manifest.csv `
+  --city-summary D:\urban_tree_data\manifests\tnm_lidar_download_city_summary.csv `
+  --crop-root D:\urban_tree_data\tree_centered_naip_crops `
+  --lidar-root D:\urban_tree_data\lidar `
+  --output-root D:\urban_tree_data\tree_centered_lidar_products `
+  --run-summary D:\urban_tree_data\manifests\tree_centered_lidar_run_summary.csv `
   --pixel-size 1 `
   --bin-workers 1 `
   --derive-workers 1
@@ -277,13 +331,7 @@ reviewing the source project classification scheme.
 
 ## Outputs
 
-The default output root is:
-
-```text
-H:\TreeCenteredModelInputs\tree_centered_lidar_products_clean\
-```
-
-It contains:
+The directory supplied through `--output-root` contains:
 
 ```text
 Candidates\<city>\<project>\Binned\  restartable intermediate memmaps
@@ -297,11 +345,7 @@ The CHM is derived from DSM minus DTM after applying the selected vertical
 scale. The LiDAR index preserves tree/crop identifiers, source project,
 coverage, and summary statistics required for later alignment.
 
-The run summary defaults to:
-
-```text
-dataCollection\LiDAR\tree_centered_lidar_crop_products_laspy_summary.csv
-```
+The run summary is written to the explicit `--run-summary` path.
 
 ## Restart and recovery
 
@@ -334,9 +378,9 @@ After QA, the clean CHM products can be converted to structure sidecars using
 
 ```powershell
 python dataCollectionPreprocessing/LiDAR/derive_clean_tree_id_centered_chm_structure_sidecars.py `
-  --crop-root H:/TreeCenteredModelInputs/tree_centered_naip_crops_clean `
-  --lidar-product-root H:/TreeCenteredModelInputs/tree_centered_lidar_products_clean `
-  --output-dir H:/TreeCenteredModelInputs/tree_centered_chm_structure_clean `
+  --crop-root D:/urban_tree_data/tree_centered_naip_crops `
+  --lidar-product-root D:/urban_tree_data/tree_centered_lidar_products `
+  --output-dir D:/urban_tree_data/tree_centered_chm_structure `
   --dry-run
 ```
 

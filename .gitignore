@@ -18,6 +18,14 @@
 
 # ignore local/generated data collection files
 /dataCollection/**
+/dataCollectionPreprocessing/LiDAR/*.csv
+/dataCollectionPreprocessing/LiDAR/*.json
+/dataCollectionPreprocessing/LiDAR/**/*.csv
+/dataCollectionPreprocessing/LiDAR/**/*.json
+
+# Frozen LiDAR configurations, inputs, and summaries are reproducibility artifacts.
+!/dataCollectionPreprocessing/LiDAR/provenance/
+!/dataCollectionPreprocessing/LiDAR/provenance/**
 
 # ignore generated figures and model outputs
 /figure_scripts/
