@@ -47,21 +47,45 @@ except ModuleNotFoundError as exc:
 
 
 class ImageEncoder(nn.Module):
-    """Encode a fixed-size raster modality without changing legacy weights."""
+    """Encode a fixed-size raster modality.
 
-    def __init__(self, in_channels: int, hidden_dim: int, dropout: float):
+    Batch normalization remains the default for compatibility with existing
+    models. Group normalization is available for single-modality experiments
+    whose shard-local batches may not provide representative running moments.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        hidden_dim: int,
+        dropout: float,
+        normalization: str = "batch",
+    ):
         super().__init__()
+
+        def norm(channels: int) -> nn.Module:
+            if normalization == "batch":
+                return nn.BatchNorm2d(channels)
+            if normalization == "group":
+                # Prefer eight groups while also supporting nonstandard hidden
+                # dimensions supplied at runtime.
+                groups = min(8, channels)
+                while channels % groups:
+                    groups -= 1
+                return nn.GroupNorm(groups, channels)
+            raise ValueError(f"Unknown image normalization: {normalization!r}")
+
         self.net = nn.Sequential(
             nn.Conv2d(in_channels, 32, 3, padding=1),
-            nn.BatchNorm2d(32),
+            norm(32),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2),
             nn.Conv2d(32, 64, 3, padding=1),
-            nn.BatchNorm2d(64),
+            norm(64),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2),
             nn.Conv2d(64, hidden_dim, 3, padding=1),
-            nn.BatchNorm2d(hidden_dim),
+            norm(hidden_dim),
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),

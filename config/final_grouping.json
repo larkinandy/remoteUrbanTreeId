@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "intermediate_group_count": 11,
+  "reported_group_count": 6,
+  "minimum_core_taxon_records": 500,
+  "minimum_extended_taxon_records": 50,
+  "partition_file": "final_k11_partition.npz",
+  "partition_sha256": "77f174da1c94e8f4fa5d5023b1ed08cd487d6379d36e8c46b74d6a14c3c79915",
+  "core_partition_file": "core_k11_partition.npz",
+  "core_partition_sha256": "9fe1a56d5c7bdb409185e28851ebe7deabbb1025eff65e3e9f0813ac2e75b53f",
+  "core_group_prototypes_file": "core_k11_group_prototypes.npz",
+  "core_group_prototypes_sha256": "c154b1c754e1cd6593b6effba86bdbc851dd62a23a268afa7dee4af79de679a3",
+  "collapse_artifact_file": "final_k11_to_k6_collapse.npz",
+  "collapse_artifact_sha256": "8b5f5dd2e785c4306869441fa7257d15dccd13772a19838efcc38af976cb1e31",
+  "collapse_map_one_based": [1, 1, 2, 2, 3, 3, 4, 5, 3, 6, 2],
+  "collapse_rule": "Sum the ensembled probabilities of intermediate classes assigned to each reported group, then select the largest collapsed probability.",
+  "selection_data": "discriminator validation partition only",
+  "independent_evaluation_data": "discriminator test partition",
+  "notes": [
+    "The 11 intermediate groups are model labels; the six reported groups are a fixed probability-sum collapse.",
+    "Rare-taxon assignments were frozen from development-only taxon centroids before held-out evaluation.",
+    "Group identifiers are arbitrary and do not represent botanical ranks or ecological functions."
+  ]
+}
