@@ -19,6 +19,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from dataCollectionPreprocessing.Shard.shard_discovery import QACityInputs, discover_qa_city_inputs
+from dataCollectionPreprocessing.Shard.shard_output import merge_city_rows
+
 
 STALE_CELL_CENTERED_QA_COLUMNS = {
     "screen_fail_center_naip_vegetation",
@@ -111,59 +114,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
-
-
-def find_sentinel_phenology_path(args: argparse.Namespace, city: str) -> Path | None:
-    if args.sentinel_phenology_dir is None:
-        return None
-    root = Path(args.sentinel_phenology_dir)
-    candidates = [
-        root / city / f"{city}{args.sentinel_phenology_suffix}",
-        root / f"{city}{args.sentinel_phenology_suffix}",
-    ]
-    for path in candidates:
-        if path.exists():
-            return path
-    return None
-
-
-def find_gee_path(args: argparse.Namespace, city: str) -> Path | None:
-    if args.gee_dir is None:
-        return None
-    root = Path(args.gee_dir)
-    candidates = sorted((root / city).glob(args.gee_sidecar_pattern)) if (root / city).exists() else []
-    candidates.extend(sorted(root.glob(f"{city}{args.gee_sidecar_pattern.lstrip('*')}")))
-    return candidates[0] if candidates else None
-
-
-def discover_cities(args: argparse.Namespace) -> dict[str, tuple[Path, Path, Path | None, Path | None, Path | None, Path | None]]:
-    selected = None if args.city_token is None else {token.strip().lower() for token in args.city_token if token.strip()}
-    excluded = {token.strip().lower() for token in args.exclude_city_token}
-    out: dict[str, tuple[Path, Path, Path | None, Path | None, Path | None, Path | None]] = {}
-    for city_dir in sorted(path for path in args.crop_root.iterdir() if path.is_dir()):
-        city = city_dir.name.strip().lower()
-        if selected is not None and city not in selected:
-            continue
-        if city in excluded:
-            continue
-        metadata = sorted(city_dir.glob(args.metadata_pattern))
-        crops = sorted(city_dir.glob(args.crop_npy_pattern))
-        structure = args.structure_dir / f"{city}{args.structure_suffix}"
-        lidar_chm_dir = args.lidar_chm_root / city
-        lidar_chm_matches = sorted(lidar_chm_dir.glob(args.lidar_chm_pattern)) if lidar_chm_dir.exists() else []
-        lidar_chm = lidar_chm_matches[0] if lidar_chm_matches else None
-        sentinel_phenology = find_sentinel_phenology_path(args, city)
-        gee = find_gee_path(args, city)
-        has_required_chm = lidar_chm is not None or not args.require_lidar_chm_product
-        if not metadata or not crops or not has_required_chm or (not structure.exists() and lidar_chm is None):
-            print(
-                f"SKIP {city}: metadata={bool(metadata)} crops={bool(crops)} "
-                f"lidar_chm={lidar_chm is not None} structure={structure.exists()}",
-                flush=True,
-            )
-            continue
-        out[city] = (metadata[0], crops[0], structure if structure.exists() else None, lidar_chm, sentinel_phenology, gee)
-    return out
 
 
 def center_slice(size: int, crop_metres: float, center_metres: float) -> tuple[slice, slice]:
@@ -419,7 +369,7 @@ def load_tree_centered_chm(
 
 def process_city(
     city: str,
-    paths: tuple[Path, Path, Path | None, Path | None, Path | None, Path | None],
+    paths: QACityInputs,
     args: argparse.Namespace,
 ) -> dict[str, object]:
     metadata_path, crop_path, structure_path, lidar_chm_path, sentinel_phenology_path, gee_path = paths
@@ -566,33 +516,9 @@ def process_city(
     return summary
 
 
-def merge_city_rows(
-    path: Path,
-    new_rows: list[dict[str, object]],
-    processed_cities: set[str],
-    columns: list[str] | None = None,
-) -> None:
-    if path.exists():
-        existing = pd.read_csv(path)
-        if "city_token" in existing.columns:
-            existing = existing[~existing["city_token"].astype(str).str.lower().isin(processed_cities)].copy()
-    else:
-        existing = pd.DataFrame(columns=columns or [])
-    additions = pd.DataFrame(new_rows, columns=columns) if columns else pd.DataFrame(new_rows)
-    merged = pd.concat([existing, additions], ignore_index=True, sort=False)
-    if "city_token" in merged.columns and len(merged):
-        merged = merged.sort_values("city_token").reset_index(drop=True)
-    if columns:
-        for column in columns:
-            if column not in merged.columns:
-                merged[column] = pd.Series(dtype="object")
-        merged = merged[columns]
-    merged.to_csv(path, index=False)
-
-
 def main() -> int:
     args = parse_args()
-    cities = discover_cities(args)
+    cities = discover_qa_city_inputs(args)
     if not cities:
         raise SystemExit("No complete city crop/structure products found.")
     worker_count = max(1, min(int(args.parallel_workers), len(cities)))

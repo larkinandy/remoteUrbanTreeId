@@ -13,21 +13,26 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-SENTINEL_MODULE_DIR = Path(__file__).resolve().parents[1] / "Sentinel2"
-if str(SENTINEL_MODULE_DIR) not in sys.path:
-    sys.path.insert(0, str(SENTINEL_MODULE_DIR))
-from sentinel_schema import (  # noqa: E402
+from dataCollectionPreprocessing.Sentinel2.sentinel_schema import (
     SENTINEL_FEATURE_COLUMNS,
     SENTINEL_META_COLUMNS,
     SENTINEL_QUALITY_COLUMNS,
     SENTINEL_SEQUENCE_COLUMNS,
 )
+from dataCollectionPreprocessing.Shard.shard_common import (
+    coordinate_key,
+    load_npz,
+    normalize_token,
+)
+from dataCollectionPreprocessing.Shard.shard_output import write_npz
+from dataCollectionPreprocessing.Shard.shard_schema import validate_shard_arrays
+from dataCollectionPreprocessing.Shard.shard_discovery import assembly_city_paths, discover_assembly_cities
+from dataCollectionPreprocessing.Shard.shard_screening import screen_complete_rows
 
 
 def parse_args() -> argparse.Namespace:
@@ -102,34 +107,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def normalize_token(value: object) -> str:
-    return "".join(ch for ch in str(value or "").strip().lower() if ch.isalnum())
-
-
-def coord_key(lat: np.ndarray | pd.Series, lon: np.ndarray | pd.Series, decimals: int) -> np.ndarray:
-    lat_values = pd.to_numeric(pd.Series(lat), errors="coerce").round(int(decimals)).astype(str)
-    lon_values = pd.to_numeric(pd.Series(lon), errors="coerce").round(int(decimals)).astype(str)
-    return (lat_values + "|" + lon_values).to_numpy(dtype=str)
-
-
-def bool_series(series: pd.Series) -> np.ndarray:
-    if series.dtype == bool:
-        return series.fillna(False).to_numpy(dtype=bool)
-    return series.fillna(False).astype(str).str.lower().isin({"1", "true", "yes", "y"}).to_numpy(dtype=bool)
-
-
-def finite_rows(array: np.ndarray) -> np.ndarray:
-    arr = np.asarray(array)
-    if arr.ndim <= 1:
-        return np.isfinite(arr)
-    return np.isfinite(arr.reshape(arr.shape[0], -1)).all(axis=1)
-
-
-def load_npz(path: Path) -> dict[str, np.ndarray]:
-    with np.load(path, allow_pickle=True) as data:
-        return {key: np.asarray(data[key]) for key in data.files}
-
-
 def raw_sentinel_files(root: Path, city: str) -> list[Path]:
     city_dir = Path(root) / city
     if not city_dir.exists():
@@ -200,7 +177,7 @@ def load_raw_sentinel_groups(root: Path, city: str, source_label: str, decimals:
         frame = frame.dropna(subset=["latitude", "longitude", "date"]).copy()
         if frame.empty:
             continue
-        frame["sentinel_coord_key"] = coord_key(frame["latitude"], frame["longitude"], decimals)
+        frame["sentinel_coord_key"] = coordinate_key(frame["latitude"], frame["longitude"], decimals)
         frames.append(frame)
         if file_index == 1 or file_index % 10 == 0 or file_index == len(files):
             print(
@@ -266,7 +243,7 @@ def load_raw_sentinel_sequences(
         }, valid
 
     valid_sentinel_pos = sentinel_pos.clip(min=0)
-    keys = coord_key(
+    keys = coordinate_key(
         np.asarray(sentinel["sentinel_lat"])[valid_sentinel_pos],
         np.asarray(sentinel["sentinel_lon"])[valid_sentinel_pos],
         int(args.coordinate_decimals),
@@ -466,150 +443,8 @@ def append_prism_daily_temperature(
     return row_valid
 
 
-def subset_by_positions(array: np.ndarray, positions: np.ndarray) -> np.ndarray:
-    arr = np.asarray(array)
-    return arr[positions] if arr.shape and arr.shape[0] == len(positions) else arr
-
-
-def sidecar_path(root: Path, city: str, suffix: str) -> Path:
-    path = root / city / f"{city}{suffix}"
-    if path.exists():
-        return path
-    return root / f"{city}{suffix}"
-
-
-def city_paths(args: argparse.Namespace, city: str) -> dict[str, Path]:
-    return {
-        "qa": args.qa_root / f"{city}_tree_centered_qa_metadata.csv",
-        "crop": args.crop_root / city / f"{city}_tree_id_centered_nearest_64px_rgbnir_crops.npy",
-        "structure": sidecar_path(args.structure_root, city, "_tree_id_centered_chm_structure_metrics.npz"),
-        "sentinel": sidecar_path(args.sentinel_phenology_root, city, "_tree_id_centered_sentinel_phenology.npz"),
-        "gee": sidecar_path(args.gee_root, city, "_tree_id_centered_gee_inputs.npz"),
-        "prism": sidecar_path(args.prism_root, city, "_prism_normals.npz"),
-    }
-
-
-def discover_cities(args: argparse.Namespace) -> list[str]:
-    selected = None if args.city_token is None else {normalize_token(value) for value in args.city_token}
-    excluded = {normalize_token(value) for value in args.exclude_city_token}
-    available: set[str] = set()
-    cities: list[str] = []
-    for path in sorted(Path(args.qa_root).glob("*_tree_centered_qa_metadata.csv")):
-        city = normalize_token(path.name.replace("_tree_centered_qa_metadata.csv", ""))
-        available.add(city)
-        if selected is not None and city not in selected:
-            continue
-        if city in excluded:
-            continue
-        cities.append(city)
-    if selected is not None:
-        missing = sorted(selected.difference(available))
-        if missing:
-            raise SystemExit(
-                "Requested --city-token value(s) were not found under "
-                f"{args.qa_root}: {', '.join(missing)}"
-            )
-    return cities
-
-
-def screen_rows(
-    metadata: pd.DataFrame,
-    crops: np.ndarray,
-    structure: dict[str, np.ndarray],
-    structure_pos: np.ndarray,
-    sentinel: dict[str, np.ndarray],
-    sentinel_pos: np.ndarray,
-    gee: dict[str, np.ndarray],
-    gee_pos: np.ndarray,
-    raw_sentinel: dict[str, np.ndarray],
-    raw_sentinel_valid: np.ndarray,
-    prism: dict[str, np.ndarray] | None,
-    prism_pos: np.ndarray | None,
-    args: argparse.Namespace,
-) -> tuple[np.ndarray, dict[str, int]]:
-    count = len(metadata)
-    reasons: dict[str, np.ndarray] = {}
-    crop_index = pd.to_numeric(metadata["crop_index"], errors="coerce").fillna(-1).astype(np.int64).to_numpy()
-    reasons["missing_crop"] = (crop_index < 0) | (crop_index >= int(crops.shape[0]))
-    reasons["qa_exclude_from_model"] = (
-        bool_series(metadata["qa_exclude_from_model"])
-        if args.exclude_qa_from_model and "qa_exclude_from_model" in metadata.columns
-        else np.zeros(count, dtype=bool)
-    )
-    reasons["missing_structure_row"] = structure_pos < 0
-    reasons["missing_sentinel_row"] = sentinel_pos < 0
-    reasons["missing_gee_row"] = gee_pos < 0
-    valid_structure_pos = structure_pos.clip(min=0)
-    valid_sentinel_pos = sentinel_pos.clip(min=0)
-    valid_gee_pos = gee_pos.clip(min=0)
-
-    reasons["missing_chm"] = (
-        np.asarray(structure.get("missing_chm", np.zeros(len(valid_structure_pos), dtype=bool))[valid_structure_pos], dtype=bool)
-        | reasons["missing_structure_row"]
-    )
-    if "tree_centered_chm_valid_mask" in structure:
-        chm_valid = np.asarray(structure["tree_centered_chm_valid_mask"][valid_structure_pos], dtype=bool)
-        reasons["missing_chm"] |= ~chm_valid.reshape(chm_valid.shape[0], -1).any(axis=1)
-    if "qa_flag_missing_lidar_chm" in metadata.columns:
-        reasons["missing_chm"] |= bool_series(metadata["qa_flag_missing_lidar_chm"])
-    reasons["nonfinite_structure"] = (
-        ~finite_rows(np.asarray(structure["tree_centered_naip_chm_structure"])[valid_structure_pos])
-        | reasons["missing_structure_row"]
-    )
-    reasons["missing_sentinel_phenology"] = (
-        np.asarray(sentinel["missing_sentinel_phenology"][valid_sentinel_pos], dtype=bool)
-        | reasons["missing_sentinel_row"]
-    )
-    reasons["nonfinite_sentinel_phenology"] = (
-        ~finite_rows(np.asarray(sentinel["sentinel_phenology"])[valid_sentinel_pos])
-        | reasons["missing_sentinel_row"]
-    )
-    reasons["missing_satellite_embedding"] = (
-        np.asarray(gee["missing_satellite_embedding"][valid_gee_pos], dtype=bool)
-        | reasons["missing_gee_row"]
-    )
-    reasons["nonfinite_satellite_embedding"] = (
-        ~finite_rows(np.asarray(gee["satellite_embedding"])[valid_gee_pos])
-        | reasons["missing_gee_row"]
-    )
-    if args.require_raw_sentinel:
-        reasons["missing_raw_sentinel"] = ~raw_sentinel_valid
-        reasons["nonfinite_raw_sentinel"] = ~finite_rows(np.asarray(raw_sentinel["sentinel_sequence"], dtype=np.float32))
-    if args.use_prism_daily:
-        reasons["missing_prism_daily"] = np.asarray(
-            raw_sentinel.get("missing_prism_daily", np.ones(count, dtype=bool)),
-            dtype=bool,
-        )
-    if args.require_prism_normals:
-        if prism is None or prism_pos is None:
-            reasons["missing_prism_normals"] = np.ones(count, dtype=bool)
-        else:
-            valid_prism_pos = prism_pos.clip(min=0)
-            reasons["missing_prism_normals"] = (
-                np.asarray(prism["missing_prism_normals"][valid_prism_pos], dtype=bool)
-                | (prism_pos < 0)
-            )
-            reasons["nonfinite_prism_normals"] = (
-                ~finite_rows(np.asarray(prism["prism_normals"])[valid_prism_pos])
-                | (prism_pos < 0)
-            )
-
-    keep = np.ones(count, dtype=bool)
-    for mask in reasons.values():
-        keep &= ~mask
-    return keep, {key: int(value.sum()) for key, value in reasons.items()}
-
-
-def write_npz(path: Path, arrays: dict[str, Any], compress: bool) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if compress:
-        np.savez_compressed(path, **arrays)
-    else:
-        np.savez(path, **arrays)
-
-
 def process_city(city: str, args: argparse.Namespace) -> list[dict[str, Any]]:
-    paths = city_paths(args, city)
+    paths = assembly_city_paths(args, city)
     missing_paths = [f"{name}={path}" for name, path in paths.items() if name != "prism" and not path.exists()]
     if args.require_prism_normals and not paths["prism"].exists():
         missing_paths.append(f"prism={paths['prism']}")
@@ -630,7 +465,7 @@ def process_city(city: str, args: argparse.Namespace) -> list[dict[str, Any]]:
     raw_sentinel, raw_sentinel_valid = load_raw_sentinel_sequences(city, metadata, sentinel, sentinel_pos, args)
     if args.use_prism_daily:
         append_prism_daily_temperature(city, metadata, raw_sentinel, args)
-    keep, reason_counts = screen_rows(
+    keep, reason_counts = screen_complete_rows(
         metadata,
         crops,
         structure,
@@ -760,6 +595,7 @@ def process_city(city: str, args: argparse.Namespace) -> list[dict[str, Any]]:
         if not args.dry_run and input_path.exists() and not args.force:
             raise FileExistsError(f"{input_path} exists; pass --force to overwrite")
         if not args.dry_run:
+            validate_shard_arrays(arrays, shard_meta)
             write_npz(input_path, arrays, args.compress)
             shard_meta.to_csv(metadata_path, index=False)
         summaries.append(
@@ -778,7 +614,7 @@ def process_city(city: str, args: argparse.Namespace) -> list[dict[str, Any]]:
 
 def main() -> int:
     args = parse_args()
-    cities = discover_cities(args)
+    cities = discover_assembly_cities(args)
     if not cities:
         raise SystemExit(f"No clean QA city files found under {args.qa_root}")
     print(f"Assembling clean complete shards for {len(cities):,} city/cities: {', '.join(cities)}", flush=True)

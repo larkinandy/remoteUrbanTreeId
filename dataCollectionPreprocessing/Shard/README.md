@@ -9,7 +9,7 @@ All commands use an explicit data root. In PowerShell, define it for the local
 workstation before running the examples:
 
 ```powershell
-$DATA_ROOT = "D:/urban-tree-data"
+$DATA_ROOT = "<path-to-data-root>"
 ```
 
 The Python environment is the repository-level `treeid-gpu` environment in
@@ -38,7 +38,7 @@ are derived from normalized scientific names during model training.
 ## 1. Normalize inventory records
 
 ```powershell
-python dataCollectionPreprocessing/Shard/build_clean_tree_record_metadata.py `
+python -m dataCollectionPreprocessing.Shard.build_clean_tree_record_metadata `
   --inventory-root "$DATA_ROOT/inventories" `
   --inventory-pattern "*_Final_*.csv" `
   --output-root "$DATA_ROOT/tree_record_metadata_clean" `
@@ -53,7 +53,7 @@ the city exclusion.
 ## 2. Calculate record-level QA
 
 ```powershell
-python dataCollectionPreprocessing/Shard/apply_tree_centered_crop_qa.py `
+python -m dataCollectionPreprocessing.Shard.apply_tree_centered_crop_qa `
   --crop-root "$DATA_ROOT/tree_centered_naip_crops_clean" `
   --structure-dir "$DATA_ROOT/tree_centered_chm_structure_clean" `
   --lidar-chm-root "$DATA_ROOT/tree_centered_lidar_products_clean/CHM" `
@@ -72,7 +72,7 @@ thresholds are frozen in
 Run a dry run first:
 
 ```powershell
-python dataCollectionPreprocessing/Shard/assemble_clean_tree_id_centered_model_input_shards.py `
+python -m dataCollectionPreprocessing.Shard.assemble_clean_tree_id_centered_model_input_shards `
   --qa-root "$DATA_ROOT/tree_centered_crop_qa_clean" `
   --crop-root "$DATA_ROOT/tree_centered_naip_crops_clean" `
   --structure-root "$DATA_ROOT/tree_centered_chm_structure_clean" `
@@ -100,6 +100,18 @@ The assembler writes uncompressed NPZ files by default, paired row metadata,
 and generated summaries beside the data. Manifest paths are relative to the
 shard root. Do not separate a manifest from the shards it describes.
 
+Validate the completed shards against the canonical member, dtype, row-count,
+and `tree_id` ordering contract:
+
+```powershell
+python -m dataCollectionPreprocessing.Shard.validate_model_input_shards `
+  --input-root "$DATA_ROOT/tree_centered_complete_sharded100k_prism_daily3_clean"
+```
+
+Reusable discovery, screening, output, and schema logic is separated into
+`shard_discovery.py`, `shard_screening.py`, `shard_output.py`, and
+`shard_schema.py`; shared array and path utilities are in `shard_common.py`.
+
 ## Frozen study provenance
 
 Tracked, path-neutral study records are under [`provenance/`](provenance/):
@@ -118,7 +130,7 @@ Generated CSV and JSON files outside `provenance/` are intentionally ignored.
 modifying the canonical shards:
 
 ```powershell
-python dataCollectionPreprocessing/Shard/create_shareable_compact_shards.py `
+python -m dataCollectionPreprocessing.Shard.create_shareable_compact_shards `
   --input-root "$DATA_ROOT/tree_centered_complete_sharded100k_prism_daily3_clean" `
   --output-root "$DATA_ROOT/shareable_compact_shards"
 ```
