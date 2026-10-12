@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Consolidate independent-test results for the k=11 single-modality models."""
+"""Create final independent-test summaries for frozen single-modality models."""
 
 from __future__ import annotations
 
@@ -9,7 +9,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
+from sklearn.metrics import precision_recall_fscore_support
+
+from workflow import collapsed_k6_probabilities, metric_summary, record_keys
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -35,17 +37,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def keys(z: np.lib.npyio.NpzFile) -> np.ndarray:
-    return np.asarray([f"{c}|{int(t)}|{int(i)}" for c, t, i in zip(z["city_token"], z["tree_id"], z["crop_index"])], dtype=str)
-
-
 def score(labels: np.ndarray, predictions: np.ndarray) -> dict[str, float | int]:
-    return {
-        "records": int(len(labels)),
-        "accuracy": float(accuracy_score(labels, predictions)),
-        "macro_f1": float(f1_score(labels, predictions, average="macro", zero_division=0)),
-        "weighted_f1": float(f1_score(labels, predictions, average="weighted", zero_division=0)),
-    }
+    return {"records": int(len(labels)), **metric_summary(labels, predictions)}
 
 
 def group_table(labels: np.ndarray, predictions: np.ndarray, names: np.ndarray, modality: str, space: str) -> pd.DataFrame:
@@ -75,12 +68,10 @@ def evaluate(
             collapsed_probabilities = np.asarray(z["collapsed_probabilities"], dtype=np.float64)
         else:
             collapsed_labels = collapse[labels]
-            collapsed_probabilities = np.zeros((len(probabilities), int(collapse.max()) + 1), dtype=np.float64)
-            for source, destination in enumerate(collapse):
-                collapsed_probabilities[:, destination] += probabilities[:, source]
+            collapsed_probabilities = collapsed_k6_probabilities(probabilities, collapse)
         collapsed_predictions = collapsed_probabilities.argmax(axis=1)
         audit = {
-            "keys": keys(z),
+            "keys": record_keys(z),
             "labels": labels,
             "collapsed_labels": collapsed_labels,
             "groups": np.asarray(z["group_names"], dtype=str),

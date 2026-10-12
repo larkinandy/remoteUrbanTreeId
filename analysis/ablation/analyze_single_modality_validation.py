@@ -1,5 +1,8 @@
 #!/usr/bin/env python
-"""Consolidate transferred k=11 single-modality validation results."""
+"""Consolidate development-set results from validation-only modality pilots.
+
+These outputs support model development and are not independent-test metrics.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +12,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
+from sklearn.metrics import precision_recall_fscore_support
+
+from workflow import collapsed_k6_probabilities, metric_summary, record_keys
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -44,20 +49,8 @@ def args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def record_keys(z: np.lib.npyio.NpzFile) -> np.ndarray:
-    return np.asarray(
-        [f"{c}|{int(t)}|{int(i)}" for c, t, i in zip(z["city_token"], z["tree_id"], z["crop_index"])],
-        dtype=str,
-    )
-
-
 def metrics(y: np.ndarray, pred: np.ndarray) -> dict[str, float | int]:
-    return {
-        "records": int(len(y)),
-        "accuracy": float(accuracy_score(y, pred)),
-        "macro_f1": float(f1_score(y, pred, average="macro", zero_division=0)),
-        "weighted_f1": float(f1_score(y, pred, average="weighted", zero_division=0)),
-    }
+    return {"records": int(len(y)), **metric_summary(y, pred)}
 
 
 def per_group(y: np.ndarray, pred: np.ndarray, groups: int, modality: str, space: str) -> pd.DataFrame:
@@ -90,9 +83,7 @@ def main() -> None:
 
     def evaluate(name: str, labels: np.ndarray, probs: np.ndarray) -> tuple[list[dict], list[pd.DataFrame]]:
         pred11 = probs.argmax(axis=1)
-        probs6 = np.zeros((len(probs), 6), dtype=np.float64)
-        for group11, group6 in enumerate(collapse):
-            probs6[:, group6] += probs[:, group11]
+        probs6 = collapsed_k6_probabilities(probs, collapse)
         labels6 = collapse[labels]
         pred6 = probs6.argmax(axis=1)
         rows = []

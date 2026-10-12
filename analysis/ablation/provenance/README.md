@@ -12,6 +12,8 @@ balanced collapse `1,1,2,2,3,3,4,5,3,6,2`.
 - `final_pruned_leave_one_out_paired_bootstrap.csv`: final-pruned leave-one-out
   effects and paired-bootstrap confidence intervals for the six retained
   branches.
+- `experiment_manifest.csv`: inventory of completed final, ablation, and
+  single-modality experiments, including evaluation split and checkpoint rule.
 
 The full record-level predictions and trained checkpoints are external study
 artifacts and are not stored in Git.
