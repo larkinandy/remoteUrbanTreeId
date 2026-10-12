@@ -30,24 +30,15 @@ if str(HERE) not in sys.path:
 import tree_centered_naip_utils as naip_utils
 
 
-DEFAULT_JOIN_CSV = Path(
-    r"H:\TreeCenteredModelInputs\tree_to_detected_crowns_clean\losangeles\losangeles_tree_to_nearest_detected_crown_5m.csv"
-)
-DEFAULT_NAIP_DIR = Path(r"E:\NAIP_PAIRED")
-DEFAULT_OUTPUT_DIR = Path(r"H:\TreeCenteredModelInputs\tree_centered_naip_crops_clean")
-DEFAULT_JOIN_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_to_detected_crowns_clean")
-DEFAULT_COUNTY_MANIFEST = HERE / "naip_county_manifest.json"
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--join-csv", type=Path, default=DEFAULT_JOIN_CSV)
-    parser.add_argument("--join-root", type=Path, default=DEFAULT_JOIN_ROOT)
+    parser.add_argument("--join-csv", type=Path, default=None, help="One clean tree-to-crown join CSV.")
+    parser.add_argument("--join-root", type=Path, default=None, help="Root containing per-city clean join CSVs.")
     parser.add_argument("--join-pattern", default="{city}_tree_to_nearest_detected_crown_5m.csv")
     parser.add_argument("--paired-index-csv", type=Path, default=None, help="Optional legacy paired raster index.")
-    parser.add_argument("--naip-dir", type=Path, default=DEFAULT_NAIP_DIR, help="Root containing downloaded county ZIPs/SIDs by city code.")
-    parser.add_argument("--county-manifest", type=Path, default=DEFAULT_COUNTY_MANIFEST)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--naip-dir", type=Path, required=True, help="Root containing downloaded county ZIPs/SIDs by city code.")
+    parser.add_argument("--county-manifest", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--city-token", action="append", default=None, help="City token(s) to process. Repeatable.")
     parser.add_argument("--exclude-city-token", action="append", default=[], help="City token(s) to skip. Repeatable.")
     parser.add_argument(
@@ -224,6 +215,8 @@ def selected_city_tokens(args: argparse.Namespace) -> list[str]:
     elif args.city_token:
         cities = [str(value).strip().lower() for value in args.city_token if str(value).strip()]
     else:
+        if args.join_root is None:
+            raise SystemExit("Supply --join-root when neither --job-csv nor --city-token is provided.")
         summary_path = Path(args.join_root) / "tree_to_detected_crowns_clean_summary.csv"
         if summary_path.exists():
             frame = pd.read_csv(summary_path, usecols=["city_token"], low_memory=False)
@@ -261,6 +254,18 @@ def build_city_jobs(args: argparse.Namespace) -> list[argparse.Namespace]:
             jobs.append(job)
         return jobs
 
+    if args.join_csv is not None:
+        cities = selected_city_tokens(args)
+        if len(cities) != 1:
+            raise SystemExit("--join-csv requires exactly one --city-token.")
+        job = copy.copy(args)
+        job.city_token = cities[0]
+        job.join_csv = Path(args.join_csv)
+        job.source_epsg = infer_epsg_from_join(job.join_csv, args.source_epsg)
+        job.output_prefix = args.output_prefix
+        return [job]
+    if args.join_root is None:
+        raise SystemExit("Supply one of --join-csv, --join-root, or --job-csv.")
     cities = selected_city_tokens(args)
     for city in cities:
         job = copy.copy(args)

@@ -1,0 +1,47 @@
+{
+  "artifact": "Frozen scientific configuration for manuscript NAIP extraction",
+  "source_catalog": {
+    "provider": "USDA National Agriculture Imagery Program",
+    "catalog_url": "https://nrcs.app.box.com/v/naip/folder/17936490251",
+    "target_year": 2022,
+    "maximum_absolute_year_difference": 6,
+    "paired_natural_products": ["hn", "nc"],
+    "paired_companion_products": ["hc"],
+    "pairing_rule": "same county and acquisition year; select the available pair nearest the target year"
+  },
+  "crop": {
+    "center": "identified crown coordinates from the clean tree-to-crown join",
+    "output_channels": ["red", "green", "blue", "near_infrared"],
+    "output_dtype": "uint8",
+    "output_pixels": [64, 64],
+    "footprint_metres": [38.0, 38.0],
+    "paired_rgb_bands_one_based": [1, 2, 3],
+    "paired_nir_band_one_based": 1,
+    "single_multiband_output_bands_one_based": [1, 2, 3, 4],
+    "source_selection": "best-overlap",
+    "best_overlap_rule": "retain the covering source crop with the lowest combined zero-value and 255-value saturation fraction",
+    "maximum_tree_to_crown_match_distance_metres": 5.0
+  },
+  "processing": {
+    "paired_max_block_gb": 80.0,
+    "single_multiband_max_block_gb": 48.0,
+    "sid_block_tile_metres": 1000.0,
+    "checkpoint_records": 10000,
+    "failed_crop_field": "crop_failed"
+  },
+  "source_format_exceptions": [
+    {
+      "city_token": "baltimore",
+      "city_code": "BAL",
+      "source_format": "single_multiband",
+      "reason": "Retained study configuration used the five-band extraction workflow."
+    },
+    {
+      "city_token": "washingtondc",
+      "city_code": "DCA",
+      "source_format": "single_multiband",
+      "reason": "Retained study configuration used the five-band extraction workflow."
+    }
+  ],
+  "storage_paths": "Intentionally excluded; paths are runtime arguments and are not scientific parameters."
+}

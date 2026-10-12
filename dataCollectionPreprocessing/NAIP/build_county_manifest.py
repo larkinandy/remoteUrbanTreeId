@@ -1,16 +1,13 @@
+"""Build the city-to-county manifest used by the NAIP download workflow."""
+
+import argparse
 import csv
 import json
 import math
 import re
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(".deps").resolve()))
 import numpy as np
-
-SOURCE = Path(r"C:\Users\larki\Desktop\PollenSense\training\McCoy")
-BOUNDARIES = Path("county_boundaries.geojson")
-OUTPUT = Path("naip_county_manifest.json")
 
 CODES = {
     "Albuquerque": "ABQ", "Anaheim": "ANA", "Arlington": "ARL", "Atlanta": "ATL",
@@ -82,8 +79,21 @@ def points_in_geometry(xs, ys, geometry):
         result |= hit
     return result
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", type=Path, required=True, help="Directory containing *_Final_*.csv inventory files.")
+    parser.add_argument("--boundaries", type=Path, required=True, help="County boundary GeoJSON in EPSG:4326.")
+    parser.add_argument("--output", type=Path, required=True, help="Output city-to-county JSON manifest.")
+    return parser.parse_args()
+
+
 def main():
-    geo = json.loads(BOUNDARIES.read_text(encoding="utf-8"))
+    args = parse_args()
+    if not args.source.is_dir():
+        raise FileNotFoundError(f"Inventory source directory not found: {args.source}")
+    if not args.boundaries.is_file():
+        raise FileNotFoundError(f"County boundary file not found: {args.boundaries}")
+    geo = json.loads(args.boundaries.read_text(encoding="utf-8"))
     counties = []
     for f in geo["features"]:
         fid = str(f.get("id") or f["properties"].get("GEO_ID", "")[-5:]).zfill(5)
@@ -93,7 +103,10 @@ def main():
 
     manifest = []
     unmatched = []
-    for path in sorted(SOURCE.glob("*_Final_*.csv")):
+    inventory_paths = sorted(args.source.glob("*_Final_*.csv"))
+    if not inventory_paths:
+        raise FileNotFoundError(f"No *_Final_*.csv inventory files found under {args.source}")
+    for path in inventory_paths:
         city = re.sub(r"_Final_.*$", "", path.stem)
         found, point_count = {}, 0
         xs, ys = [], []
@@ -117,12 +130,15 @@ def main():
                 if hit.any(): found[fid] = name; matched[idx[hit]] = True
             for i in np.flatnonzero(~matched):
                 unmatched.append({"city":city,"latitude":ys[i],"longitude":xs[i]})
+        if city not in CODES:
+            raise KeyError(f"No unique NAIP storage code is configured for city {city!r}")
         manifest.append({
             "city": city, "code": CODES[city], "points": point_count,
             "counties": [{"geoid": f, "state": STATE_ABBR[f[:2]], "county_fips": f[2:], "name": n}
                          for f,n in sorted(found.items())]
         })
-    OUTPUT.write_text(json.dumps({"cities":manifest,"unmatched":unmatched}, indent=2), encoding="utf-8")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps({"cities":manifest,"unmatched":unmatched}, indent=2), encoding="utf-8")
     print(json.dumps({"cities":len(manifest),"city_county_pairs":sum(len(x["counties"]) for x in manifest),
                       "multi_county_cities":[{"city":x["city"],"code":x["code"],"counties":x["counties"]}
                                               for x in manifest if len(x["counties"])>1],

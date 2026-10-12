@@ -1,0 +1,759 @@
+{
+  "cities": [
+    {
+      "city": "albuquerque",
+      "code": "ABQ",
+      "retained_crop_records": 1866,
+      "counties": [
+        {
+          "geoid": "35001",
+          "state": "NM",
+          "county_fips": "001",
+          "name": "Bernalillo"
+        }
+      ]
+    },
+    {
+      "city": "anaheim",
+      "code": "ANA",
+      "retained_crop_records": 27796,
+      "counties": [
+        {
+          "geoid": "06059",
+          "state": "CA",
+          "county_fips": "059",
+          "name": "Orange"
+        }
+      ]
+    },
+    {
+      "city": "arlington",
+      "code": "ARL",
+      "retained_crop_records": 8142,
+      "counties": [
+        {
+          "geoid": "48439",
+          "state": "TX",
+          "county_fips": "439",
+          "name": "Tarrant"
+        }
+      ]
+    },
+    {
+      "city": "atlanta",
+      "code": "ATL",
+      "retained_crop_records": 16807,
+      "counties": [
+        {
+          "geoid": "13067",
+          "state": "GA",
+          "county_fips": "067",
+          "name": "Cobb"
+        },
+        {
+          "geoid": "13089",
+          "state": "GA",
+          "county_fips": "089",
+          "name": "DeKalb"
+        },
+        {
+          "geoid": "13121",
+          "state": "GA",
+          "county_fips": "121",
+          "name": "Fulton"
+        }
+      ]
+    },
+    {
+      "city": "auroraco",
+      "code": "AUR",
+      "retained_crop_records": 47121,
+      "counties": [
+        {
+          "geoid": "08001",
+          "state": "CO",
+          "county_fips": "001",
+          "name": "Adams"
+        },
+        {
+          "geoid": "08005",
+          "state": "CO",
+          "county_fips": "005",
+          "name": "Arapahoe"
+        }
+      ]
+    },
+    {
+      "city": "austin",
+      "code": "AUS",
+      "retained_crop_records": 3927,
+      "counties": [
+        {
+          "geoid": "48453",
+          "state": "TX",
+          "county_fips": "453",
+          "name": "Travis"
+        }
+      ]
+    },
+    {
+      "city": "baltimore",
+      "code": "BAL",
+      "retained_crop_records": 86573,
+      "counties": [
+        {
+          "geoid": "24005",
+          "state": "MD",
+          "county_fips": "005",
+          "name": "Baltimore"
+        },
+        {
+          "geoid": "24510",
+          "state": "MD",
+          "county_fips": "510",
+          "name": "Baltimore"
+        }
+      ]
+    },
+    {
+      "city": "buffalo",
+      "code": "BUF",
+      "retained_crop_records": 44808,
+      "counties": [
+        {
+          "geoid": "36029",
+          "state": "NY",
+          "county_fips": "029",
+          "name": "Erie"
+        }
+      ]
+    },
+    {
+      "city": "capecoral",
+      "code": "CPC",
+      "retained_crop_records": 18311,
+      "counties": [
+        {
+          "geoid": "12071",
+          "state": "FL",
+          "county_fips": "071",
+          "name": "Lee"
+        }
+      ]
+    },
+    {
+      "city": "coloradosprings",
+      "code": "COS",
+      "retained_crop_records": 18472,
+      "counties": [
+        {
+          "geoid": "08041",
+          "state": "CO",
+          "county_fips": "041",
+          "name": "El Paso"
+        }
+      ]
+    },
+    {
+      "city": "columbus",
+      "code": "CMH",
+      "retained_crop_records": 86171,
+      "counties": [
+        {
+          "geoid": "39041",
+          "state": "OH",
+          "county_fips": "041",
+          "name": "Delaware"
+        },
+        {
+          "geoid": "39049",
+          "state": "OH",
+          "county_fips": "049",
+          "name": "Franklin"
+        },
+        {
+          "geoid": "39089",
+          "state": "OH",
+          "county_fips": "089",
+          "name": "Licking"
+        }
+      ]
+    },
+    {
+      "city": "denver",
+      "code": "DEN",
+      "retained_crop_records": 212269,
+      "counties": [
+        {
+          "geoid": "08001",
+          "state": "CO",
+          "county_fips": "001",
+          "name": "Adams"
+        },
+        {
+          "geoid": "08005",
+          "state": "CO",
+          "county_fips": "005",
+          "name": "Arapahoe"
+        },
+        {
+          "geoid": "08019",
+          "state": "CO",
+          "county_fips": "019",
+          "name": "Clear Creek"
+        },
+        {
+          "geoid": "08031",
+          "state": "CO",
+          "county_fips": "031",
+          "name": "Denver"
+        },
+        {
+          "geoid": "08035",
+          "state": "CO",
+          "county_fips": "035",
+          "name": "Douglas"
+        },
+        {
+          "geoid": "08059",
+          "state": "CO",
+          "county_fips": "059",
+          "name": "Jefferson"
+        }
+      ]
+    },
+    {
+      "city": "desmoines",
+      "code": "DSM",
+      "retained_crop_records": 9546,
+      "counties": [
+        {
+          "geoid": "19001",
+          "state": "IA",
+          "county_fips": "001",
+          "name": "Adair"
+        },
+        {
+          "geoid": "19027",
+          "state": "IA",
+          "county_fips": "027",
+          "name": "Carroll"
+        },
+        {
+          "geoid": "19049",
+          "state": "IA",
+          "county_fips": "049",
+          "name": "Dallas"
+        },
+        {
+          "geoid": "19077",
+          "state": "IA",
+          "county_fips": "077",
+          "name": "Guthrie"
+        },
+        {
+          "geoid": "19083",
+          "state": "IA",
+          "county_fips": "083",
+          "name": "Hardin"
+        },
+        {
+          "geoid": "19099",
+          "state": "IA",
+          "county_fips": "099",
+          "name": "Jasper"
+        },
+        {
+          "geoid": "19121",
+          "state": "IA",
+          "county_fips": "121",
+          "name": "Madison"
+        },
+        {
+          "geoid": "19153",
+          "state": "IA",
+          "county_fips": "153",
+          "name": "Polk"
+        },
+        {
+          "geoid": "19181",
+          "state": "IA",
+          "county_fips": "181",
+          "name": "Warren"
+        }
+      ]
+    },
+    {
+      "city": "detroit",
+      "code": "DET",
+      "retained_crop_records": 7719,
+      "counties": [
+        {
+          "geoid": "26163",
+          "state": "MI",
+          "county_fips": "163",
+          "name": "Wayne"
+        }
+      ]
+    },
+    {
+      "city": "durham",
+      "code": "DUR",
+      "retained_crop_records": 10489,
+      "counties": [
+        {
+          "geoid": "37063",
+          "state": "NC",
+          "county_fips": "063",
+          "name": "Durham"
+        }
+      ]
+    },
+    {
+      "city": "gardengrove",
+      "code": "GGV",
+      "retained_crop_records": 13352,
+      "counties": [
+        {
+          "geoid": "06059",
+          "state": "CA",
+          "county_fips": "059",
+          "name": "Orange"
+        }
+      ]
+    },
+    {
+      "city": "greensboro",
+      "code": "GSO",
+      "retained_crop_records": 1992,
+      "counties": [
+        {
+          "geoid": "37001",
+          "state": "NC",
+          "county_fips": "001",
+          "name": "Alamance"
+        },
+        {
+          "geoid": "37081",
+          "state": "NC",
+          "county_fips": "081",
+          "name": "Guilford"
+        }
+      ]
+    },
+    {
+      "city": "huntingtonbeach",
+      "code": "HNB",
+      "retained_crop_records": 34523,
+      "counties": [
+        {
+          "geoid": "06059",
+          "state": "CA",
+          "county_fips": "059",
+          "name": "Orange"
+        }
+      ]
+    },
+    {
+      "city": "knoxville",
+      "code": "TYS",
+      "retained_crop_records": 4505,
+      "counties": [
+        {
+          "geoid": "47093",
+          "state": "TN",
+          "county_fips": "093",
+          "name": "Knox"
+        }
+      ]
+    },
+    {
+      "city": "lasvegas",
+      "code": "LAS",
+      "retained_crop_records": 28574,
+      "counties": [
+        {
+          "geoid": "32003",
+          "state": "NV",
+          "county_fips": "003",
+          "name": "Clark"
+        }
+      ]
+    },
+    {
+      "city": "losangeles",
+      "code": "LAX",
+      "retained_crop_records": 20623,
+      "counties": [
+        {
+          "geoid": "06037",
+          "state": "CA",
+          "county_fips": "037",
+          "name": "Los Angeles"
+        }
+      ]
+    },
+    {
+      "city": "louisville",
+      "code": "SDF",
+      "retained_crop_records": 20026,
+      "counties": [
+        {
+          "geoid": "21029",
+          "state": "KY",
+          "county_fips": "029",
+          "name": "Bullitt"
+        },
+        {
+          "geoid": "21111",
+          "state": "KY",
+          "county_fips": "111",
+          "name": "Jefferson"
+        }
+      ]
+    },
+    {
+      "city": "madison",
+      "code": "MSN",
+      "retained_crop_records": 65335,
+      "counties": [
+        {
+          "geoid": "55025",
+          "state": "WI",
+          "county_fips": "025",
+          "name": "Dane"
+        }
+      ]
+    },
+    {
+      "city": "milwaukee",
+      "code": "MKE",
+      "retained_crop_records": 14071,
+      "counties": [
+        {
+          "geoid": "55027",
+          "state": "WI",
+          "county_fips": "027",
+          "name": "Dodge"
+        },
+        {
+          "geoid": "55055",
+          "state": "WI",
+          "county_fips": "055",
+          "name": "Jefferson"
+        },
+        {
+          "geoid": "55079",
+          "state": "WI",
+          "county_fips": "079",
+          "name": "Milwaukee"
+        },
+        {
+          "geoid": "55101",
+          "state": "WI",
+          "county_fips": "101",
+          "name": "Racine"
+        },
+        {
+          "geoid": "55131",
+          "state": "WI",
+          "county_fips": "131",
+          "name": "Washington"
+        },
+        {
+          "geoid": "55133",
+          "state": "WI",
+          "county_fips": "133",
+          "name": "Waukesha"
+        }
+      ]
+    },
+    {
+      "city": "newyork",
+      "code": "NYC",
+      "retained_crop_records": 434679,
+      "counties": [
+        {
+          "geoid": "36005",
+          "state": "NY",
+          "county_fips": "005",
+          "name": "Bronx"
+        },
+        {
+          "geoid": "36047",
+          "state": "NY",
+          "county_fips": "047",
+          "name": "Kings"
+        },
+        {
+          "geoid": "36059",
+          "state": "NY",
+          "county_fips": "059",
+          "name": "Nassau"
+        },
+        {
+          "geoid": "36061",
+          "state": "NY",
+          "county_fips": "061",
+          "name": "New York"
+        },
+        {
+          "geoid": "36081",
+          "state": "NY",
+          "county_fips": "081",
+          "name": "Queens"
+        },
+        {
+          "geoid": "36085",
+          "state": "NY",
+          "county_fips": "085",
+          "name": "Richmond"
+        }
+      ]
+    },
+    {
+      "city": "oklahomacity",
+      "code": "OKC",
+      "retained_crop_records": 6554,
+      "counties": [
+        {
+          "geoid": "40027",
+          "state": "OK",
+          "county_fips": "027",
+          "name": "Cleveland"
+        },
+        {
+          "geoid": "40109",
+          "state": "OK",
+          "county_fips": "109",
+          "name": "Oklahoma"
+        }
+      ]
+    },
+    {
+      "city": "pittsburgh",
+      "code": "PIT",
+      "retained_crop_records": 22105,
+      "counties": [
+        {
+          "geoid": "42003",
+          "state": "PA",
+          "county_fips": "003",
+          "name": "Allegheny"
+        }
+      ]
+    },
+    {
+      "city": "portland",
+      "code": "PDX",
+      "retained_crop_records": 176615,
+      "counties": [
+        {
+          "geoid": "41005",
+          "state": "OR",
+          "county_fips": "005",
+          "name": "Clackamas"
+        },
+        {
+          "geoid": "41051",
+          "state": "OR",
+          "county_fips": "051",
+          "name": "Multnomah"
+        },
+        {
+          "geoid": "41067",
+          "state": "OR",
+          "county_fips": "067",
+          "name": "Washington"
+        }
+      ]
+    },
+    {
+      "city": "providence",
+      "code": "PVD",
+      "retained_crop_records": 2285,
+      "counties": [
+        {
+          "geoid": "44007",
+          "state": "RI",
+          "county_fips": "007",
+          "name": "Providence"
+        }
+      ]
+    },
+    {
+      "city": "ranchocucamonga",
+      "code": "RCM",
+      "retained_crop_records": 51615,
+      "counties": [
+        {
+          "geoid": "06071",
+          "state": "CA",
+          "county_fips": "071",
+          "name": "San Bernardino"
+        }
+      ]
+    },
+    {
+      "city": "rochester",
+      "code": "ROC",
+      "retained_crop_records": 2326,
+      "counties": [
+        {
+          "geoid": "36055",
+          "state": "NY",
+          "county_fips": "055",
+          "name": "Monroe"
+        },
+        {
+          "geoid": "36061",
+          "state": "NY",
+          "county_fips": "061",
+          "name": "New York"
+        }
+      ]
+    },
+    {
+      "city": "sandiego",
+      "code": "SAN",
+      "retained_crop_records": 134234,
+      "counties": [
+        {
+          "geoid": "06073",
+          "state": "CA",
+          "county_fips": "073",
+          "name": "San Diego"
+        }
+      ]
+    },
+    {
+      "city": "sanfrancisco",
+      "code": "SFO",
+      "retained_crop_records": 105107,
+      "counties": [
+        {
+          "geoid": "06075",
+          "state": "CA",
+          "county_fips": "075",
+          "name": "San Francisco"
+        },
+        {
+          "geoid": "06081",
+          "state": "CA",
+          "county_fips": "081",
+          "name": "San Mateo"
+        }
+      ]
+    },
+    {
+      "city": "sanjose",
+      "code": "SJC",
+      "retained_crop_records": 235779,
+      "counties": [
+        {
+          "geoid": "06085",
+          "state": "CA",
+          "county_fips": "085",
+          "name": "Santa Clara"
+        }
+      ]
+    },
+    {
+      "city": "santarosa",
+      "code": "STR",
+      "retained_crop_records": 740,
+      "counties": [
+        {
+          "geoid": "06097",
+          "state": "CA",
+          "county_fips": "097",
+          "name": "Sonoma"
+        }
+      ]
+    },
+    {
+      "city": "seattle",
+      "code": "SEA",
+      "retained_crop_records": 85865,
+      "counties": [
+        {
+          "geoid": "53033",
+          "state": "WA",
+          "county_fips": "033",
+          "name": "King"
+        }
+      ]
+    },
+    {
+      "city": "siouxfalls",
+      "code": "FSD",
+      "retained_crop_records": 39592,
+      "counties": [
+        {
+          "geoid": "46083",
+          "state": "SD",
+          "county_fips": "083",
+          "name": "Lincoln"
+        },
+        {
+          "geoid": "46099",
+          "state": "SD",
+          "county_fips": "099",
+          "name": "Minnehaha"
+        }
+      ]
+    },
+    {
+      "city": "stlouis",
+      "code": "STL",
+      "retained_crop_records": 57754,
+      "counties": [
+        {
+          "geoid": "29073",
+          "state": "MO",
+          "county_fips": "073",
+          "name": "Gasconade"
+        },
+        {
+          "geoid": "29189",
+          "state": "MO",
+          "county_fips": "189",
+          "name": "St. Louis"
+        },
+        {
+          "geoid": "29510",
+          "state": "MO",
+          "county_fips": "510",
+          "name": "St. Louis"
+        }
+      ]
+    },
+    {
+      "city": "tampa",
+      "code": "TPA",
+      "retained_crop_records": 14953,
+      "counties": [
+        {
+          "geoid": "12057",
+          "state": "FL",
+          "county_fips": "057",
+          "name": "Hillsborough"
+        }
+      ]
+    },
+    {
+      "city": "washingtondc",
+      "code": "DCA",
+      "retained_crop_records": 150723,
+      "counties": [
+        {
+          "geoid": "11001",
+          "state": "DC",
+          "county_fips": "001",
+          "name": "District of Columbia"
+        }
+      ]
+    }
+  ],
+  "basis": "County tokens in the exact source rasters selected by retained crop metadata."
+}
