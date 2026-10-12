@@ -29,6 +29,7 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 import tree_centered_naip_utils as naip_utils
+from naip_cli import parse_positive_bands, require_columns
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,17 +100,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def require_columns(frame: pd.DataFrame, columns: list[str], path: Path) -> None:
-    missing = [column for column in columns if column not in frame.columns]
-    if missing:
-        raise RuntimeError(f"{path} is missing required column(s): {missing}")
-
-
 def parse_bands(value: str) -> tuple[int, int, int, int]:
-    bands = tuple(int(part.strip()) for part in str(value).split(",") if part.strip())
-    if len(bands) != 4 or min(bands) < 1:
-        raise SystemExit("--bands must contain four positive 1-based bands: R,G,B,NIR")
-    return bands
+    return parse_positive_bands(value, 4, "--bands")  # type: ignore[return-value]
 
 
 def discover_sid_sources(naip_dir: Path, city_token: str, pattern: str) -> list[Path]:
