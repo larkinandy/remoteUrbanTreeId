@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import kruskal
 
+from sensitivity_utils import boolean_series, record_keys
+
 
 HEIGHT_ORDER = ["<2 m", "2–5 m", "5–10 m", ">=10 m"]
 MODALITY_LABELS = {
@@ -39,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--shard-root",
         type=Path,
-        default=Path(r"H:\TreeCenteredModelInputs\tree_centered_complete_sharded100k_prism_daily3_clean"),
+        required=True,
     )
     parser.add_argument(
         "--output-dir",
@@ -47,14 +49,20 @@ def parse_args() -> argparse.Namespace:
         default=Path("outputs/reviewer_revision/final_gate_weight_stratified_analysis"),
     )
     parser.add_argument("--minimum-city-height-support", type=int, default=100)
+    parser.add_argument(
+        "--plot", action="store_true",
+        help="Also render the optional summary figure; table generation does not require Matplotlib.",
+    )
     return parser.parse_args()
 
 
 def make_keys(city: np.ndarray, tree_id: np.ndarray, crop_index: np.ndarray) -> np.ndarray:
-    return np.asarray([f"{c}|{int(t)}|{int(i)}" for c, t, i in zip(city, tree_id, crop_index)], dtype=str)
+    """Backward-compatible wrapper around the shared record-key implementation."""
+    return record_keys(city, tree_id, crop_index)
 
 
 def extract_height(frame: pd.DataFrame, shard_root: Path, cache_path: Path | None = None) -> np.ndarray:
+    """Extract CHM height and save a record-keyed cache when requested."""
     positions: dict[str, dict[tuple[int, int], int]] = {}
     for index, row in frame[["city_token", "tree_id", "crop_index"]].iterrows():
         positions.setdefault(str(row.city_token), {})[(int(row.tree_id), int(row.crop_index))] = int(index)
@@ -77,7 +85,7 @@ def extract_height(frame: pd.DataFrame, shard_root: Path, cache_path: Path | Non
         print(f"Height extraction: {city}; matched={matched:,}/{len(frame):,}", flush=True)
     if cache_path is not None:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(cache_path, heights)
+        np.savez_compressed(cache_path, record_key=frame.record_key.to_numpy(str), height_m=heights)
     if matched != len(frame) or np.isnan(heights).any():
         raise ValueError(f"Height extraction incomplete: matched={matched:,}; missing={int(np.isnan(heights).sum()):,}")
     return heights
@@ -172,10 +180,18 @@ def main() -> int:
     )
     if frame[["qa_flag_low_vegetated_height_with_lidar", "frequency_category"]].isna().any().any():
         raise ValueError("Missing sensitivity metadata after record-key join")
-    height_cache = args.output_dir / "tree_chm_p95_height_m.npy"
-    frame["vegetation_height_m"] = (
-        np.load(height_cache) if height_cache.exists() else extract_height(frame, args.shard_root, height_cache)
-    )
+    height_cache = args.output_dir / "tree_chm_p95_height_by_record.npz"
+    if height_cache.exists():
+        with np.load(height_cache, allow_pickle=False) as cached:
+            cached_keys = np.asarray(cached["record_key"], dtype=str)
+            heights = np.asarray(cached["height_m"], dtype=np.float32)
+        if not np.array_equal(cached_keys, frame.record_key.to_numpy(str)):
+            raise ValueError("Cached height record keys do not match the current prediction order")
+        if len(heights) != len(frame) or np.isnan(heights).any():
+            raise ValueError("Cached height values are incomplete")
+        frame["vegetation_height_m"] = heights
+    else:
+        frame["vegetation_height_m"] = extract_height(frame, args.shard_root, height_cache)
     frame["height_class"] = pd.cut(
         frame.vegetation_height_m,
         bins=[-np.inf, 2.0, 5.0, 10.0, np.inf],
@@ -184,7 +200,7 @@ def main() -> int:
         ordered=True,
     )
     frame["taxon_provenance"] = np.where(frame.frequency_category.eq("core_ge500"), "Core taxa", "Rare taxa")
-    frame["qa_screened"] = ~frame.qa_flag_low_vegetated_height_with_lidar.astype(bool)
+    frame["qa_screened"] = ~boolean_series(frame.qa_flag_low_vegetated_height_with_lidar)
     for index, modality in enumerate(modalities):
         frame[f"gate_{modality}"] = gates[:, index]
     screened = frame.loc[frame.qa_screened].copy()
@@ -217,7 +233,8 @@ def main() -> int:
         "record_key", "city_token", "vegetation_height_m", "height_class",
         "taxon_provenance", "qa_screened", *gate_columns,
     ]].to_csv(args.output_dir / "gate_weight_stratification_records.csv.gz", index=False, compression="gzip")
-    plot_summary(by_height, by_provenance, args.output_dir / "gate_weight_height_and_provenance")
+    if args.plot:
+        plot_summary(by_height, by_provenance, args.output_dir / "gate_weight_height_and_provenance")
     metadata = {
         "source_predictions": str(args.predictions),
         "source_sensitivity_variables": str(args.sensitivity_variables),

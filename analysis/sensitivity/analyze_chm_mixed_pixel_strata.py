@@ -13,7 +13,11 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, f1_score
+
+from sensitivity_utils import boolean_series, load_predictions, metric_set
+
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,37 +42,20 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("outputs/reviewer_revision/chm_mixed_pixel_stratified_sensitivity"),
     )
+    p.add_argument(
+        "--grouping-config", type=Path, default=ROOT / "config" / "final_grouping.json"
+    )
     p.add_argument("--threshold", type=float, default=0.25)
     p.add_argument("--minimum-chm-coverage", type=float, default=0.50)
     return p.parse_args()
 
 
-def metrics(y: np.ndarray, pred: np.ndarray) -> dict[str, float | int]:
-    return {
-        "records": int(len(y)),
-        "accuracy": float(accuracy_score(y, pred)),
-        "macro_f1": float(f1_score(y, pred, average="macro", zero_division=0)),
-        "weighted_f1": float(f1_score(y, pred, average="weighted", zero_division=0)),
-    }
-
-
 def main() -> None:
+    """Calculate CHM-supported neighborhood-vegetation sensitivity metrics."""
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    z = np.load(args.predictions, allow_pickle=True)
-    pred = pd.DataFrame(
-        {
-            "record_key": [
-                f"{c}|{int(t)}|{int(i)}"
-                for c, t, i in zip(z["city_token"], z["tree_id"], z["crop_index"])
-            ],
-            "label_k11": z["labels"].astype(int),
-            "prediction_k11": z["predictions"].astype(int),
-            "label_k6": z["collapsed_labels"].astype(int),
-            "prediction_k6": z["collapsed_predictions"].astype(int),
-        }
-    )
+    pred = load_predictions(args.predictions, args.grouping_config)
     if not pred.record_key.is_unique:
         raise ValueError("Prediction record keys are not unique")
 
@@ -89,7 +76,7 @@ def main() -> None:
     if frame.qa_flag_low_vegetated_height_with_lidar.isna().any():
         raise ValueError("Some prediction records lack QA flags")
 
-    frame["qa_screened"] = ~frame.qa_flag_low_vegetated_height_with_lidar.astype(bool)
+    frame["qa_screened"] = ~boolean_series(frame.qa_flag_low_vegetated_height_with_lidar)
     frame["chm_proxy_eligible"] = (
         frame.qa_screened
         & frame.chm_tall_vegetation_fraction_of_valid_area.notna()
@@ -105,7 +92,7 @@ def main() -> None:
     )
 
     rows = []
-    for label_space in ("k6", "k11"):
+    for label_space, class_count in (("collapsed_k6", 6), ("k11", 11)):
         for stratum in (f"<{args.threshold:.0%}", f">={args.threshold:.0%}"):
             part = frame[frame.chm_proxy_stratum.eq(stratum)]
             row = {
@@ -114,13 +101,17 @@ def main() -> None:
                 "minimum_chm_valid_coverage": args.minimum_chm_coverage,
                 "tall_vegetation_fraction_threshold": args.threshold,
             }
-            row.update(metrics(part[f"label_{label_space}"].to_numpy(), part[f"prediction_{label_space}"].to_numpy()))
+            row.update(metric_set(
+                part[f"label_{label_space}"].to_numpy(),
+                part[f"prediction_{label_space}"].to_numpy(),
+                class_count,
+            ))
             rows.append(row)
     results = pd.DataFrame(rows)
     results.to_csv(args.output_dir / "chm_mixed_pixel_stratified_performance.csv", index=False)
 
     deltas = []
-    for label_space in ("k6", "k11"):
+    for label_space in ("collapsed_k6", "k11"):
         part = results.set_index(["label_space", "criterion"]).loc[label_space]
         high = part.loc[f">={args.threshold:.0%}"]
         low = part.loc[f"<{args.threshold:.0%}"]
@@ -157,7 +148,8 @@ def main() -> None:
     frame[[
         "record_key", "qa_screened", "chm_valid_fraction_in_cell",
         "chm_tall_vegetation_fraction_of_valid_area", "chm_proxy_eligible",
-        "chm_proxy_stratum", "label_k11", "prediction_k11", "label_k6", "prediction_k6"
+        "chm_proxy_stratum", "label_k11", "prediction_k11",
+        "label_collapsed_k6", "prediction_collapsed_k6"
     ]].to_csv(args.output_dir / "record_level_chm_strata.csv.gz", index=False, compression="gzip")
 
     print(results.to_string(index=False))

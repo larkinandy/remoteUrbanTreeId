@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "qa_warning_excluded": "qa_flag_low_vegetated_height_with_lidar",
+  "label_spaces": ["k11", "collapsed_k6"],
+  "thresholds": {
+    "vegetation_height_m": 2.0,
+    "crown_match_distance_m": 2.5,
+    "duplicate_coordinate_percent": 5.0,
+    "naip_vegetation_fraction": 0.25,
+    "sentinel_interpolation_fraction": 0.25,
+    "lidar_inventory_absolute_year_difference": 5.0,
+    "naip_inventory_absolute_year_difference": 2.0,
+    "chm_valid_fraction": 0.50,
+    "chm_tall_vegetation_fraction": 0.25
+  },
+  "taxon_provenance": {
+    "core_value": "core_ge500",
+    "core_label": "Core taxa",
+    "rare_label": "Rare taxa"
+  },
+  "reporting": {
+    "primary_label_space": "collapsed_k6",
+    "macro_f1": "unweighted mean across represented groups within each stratum",
+    "weighted_f1": "support-weighted mean across represented groups within each stratum"
+  },
+  "notes": [
+    "All final sensitivity metrics are calculated post hoc on independent test predictions.",
+    "The complete sensitivity table retains all test records because the vegetation-height warning is itself a reported sensitivity contrast; group-performance and gate analyses exclude that warning.",
+    "The NAIP and CHM within-cell measures characterize neighborhood vegetation occupancy, not focal-crown coverage."
+  ]
+}
