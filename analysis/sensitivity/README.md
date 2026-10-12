@@ -27,6 +27,10 @@ rejects duplicate keys. The final table additionally verifies that stored
 `collapsed_k6` labels and probabilities reproduce the canonical probability
 sum from `k11`.
 
+All large or generated artifacts—including keyed caches, record-level output,
+predictions, and figures—must be written below an external `$DATA_ROOT` (or an
+ignored `outputs/` directory), never inside `analysis/sensitivity/`.
+
 ## Complete sensitivity table
 
 ```powershell
@@ -52,6 +56,12 @@ python analysis/sensitivity/analyze_final_test_predictions.py `
   --sensitivity-variables "$DATA_ROOT/final_test_sensitivity_variables.csv.gz" `
   --output-dir "$DATA_ROOT/results/test_performance"
 
+python analysis/sensitivity/analyze_chm_mixed_pixel_strata.py `
+  --predictions "$DATA_ROOT/final_model/ensemble_predictions.npz" `
+  --sensitivity-variables "$DATA_ROOT/final_test_sensitivity_variables.csv.gz" `
+  --mixed-pixel-proxies "$DATA_ROOT/record_level_reportable_mixed_pixel_proxies.csv.gz" `
+  --output-dir "$DATA_ROOT/results/chm_mixed_pixel_strata"
+
 python analysis/sensitivity/analyze_gate_weight_strata.py `
   --predictions "$DATA_ROOT/final_model/ensemble_predictions.npz" `
   --sensitivity-variables "$DATA_ROOT/final_test_sensitivity_variables.csv.gz" `
@@ -61,6 +71,7 @@ python analysis/sensitivity/analyze_gate_weight_strata.py `
 
 Add `--plot` when the environment has a functioning Matplotlib installation;
 the statistical tables and keyed height cache do not depend on figure output.
+When requested, the figure is exported as SVG, PDF, and 600-dpi PNG.
 
 Frozen publication-facing values and source checksums are retained in
 `provenance/`. Large predictions, record-level tables, and shard files remain
