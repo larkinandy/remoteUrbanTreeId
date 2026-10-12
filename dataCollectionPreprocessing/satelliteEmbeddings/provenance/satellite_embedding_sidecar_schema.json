@@ -14,7 +14,7 @@
   "satellite_embedding_columns": "string[64]",
   "satellite_embedding_years": "int32[Y]",
   "satellite_embedding_quality_columns": "string[6]",
-  "embedding_source_code": "int8[N] (0=missing, 2=direct crown-cell export; 1 is retained only for compatibility with frozen historical sidecars)",
+  "embedding_source_code": "int8[N] (0=missing; 1=historical original-coordinate export resolving to the final crown cell; 2=direct crown-cell export)",
   "missing_satellite_embedding": "bool[N]",
   "used_original_satellite_embedding": "bool[N] (compatibility field; false for a from-scratch rebuild)",
   "used_additional_satellite_embedding": "bool[N] (compatibility field; true when a direct crown-cell export is used)",

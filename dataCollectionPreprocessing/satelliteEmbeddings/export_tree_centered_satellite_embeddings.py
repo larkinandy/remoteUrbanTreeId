@@ -10,21 +10,24 @@ missing-cell inventories are not part of the from-scratch workflow.
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import re
 import time
 from pathlib import Path
 
 import pandas as pd
-import numpy as np
-from pyproj import Transformer
+
+from satellite_embedding_utils import normalize_city, unique_crown_cell_points
+from earth_engine_export_utils import (
+    TaskCapacityGate,
+    append_manifest,
+    completed_output_exists,
+    load_submitted_keys,
+    sanitize_name,
+)
 
 
 DATASET_ID = "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL"
 EMBEDDING_BANDS = [f"A{i:02d}" for i in range(64)]
-ACTIVE_TASK_STATES = {"READY", "RUNNING"}
-
 DEFAULT_DRIVE_FOLDER = "GEE_TREE_CENTERED_SATELLITE_EMBEDDING"
 DEFAULT_DESCRIPTION_PREFIX = "tree_centered_satellite_embedding"
 
@@ -78,12 +81,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def normalize_token(value: object) -> str:
-    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
-
-
-def sanitize_name(value: object, max_len: int = 90) -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", str(value or "")).strip("_")
-    return cleaned[:max_len] or "unknown"
+    return normalize_city(value)
 
 
 def initialize_earth_engine(args: argparse.Namespace) -> None:
@@ -129,43 +127,6 @@ def discover_sources(args: argparse.Namespace) -> list[dict[str, object]]:
     return sources
 
 
-def crown_cell_points(metadata: pd.DataFrame) -> pd.DataFrame:
-    """Return one export point for each unique crown-centered 10 m cell."""
-    required = {"crown_x_utm", "crown_y_utm", "crown_epsg"}
-    missing = sorted(required.difference(metadata.columns))
-    if missing:
-        raise ValueError(f"Crop metadata missing required columns: {missing}")
-    pieces: list[pd.DataFrame] = []
-    for epsg_value, group in metadata.groupby("crown_epsg", sort=False):
-        epsg = int(epsg_value)
-        x = pd.to_numeric(group["crown_x_utm"], errors="coerce").to_numpy(dtype=np.float64)
-        y = pd.to_numeric(group["crown_y_utm"], errors="coerce").to_numpy(dtype=np.float64)
-        valid = np.isfinite(x) & np.isfinite(y)
-        if not valid.any():
-            continue
-        group = group.loc[valid]
-        x, y = x[valid], y[valid]
-        col = np.floor(x / 10.0).astype(np.int64)
-        row = np.floor(y / 10.0).astype(np.int64)
-        center_x, center_y = col * 10.0 + 5.0, row * 10.0 + 5.0
-        lon, lat = Transformer.from_crs(f"EPSG:{epsg}", "EPSG:4326", always_xy=True).transform(center_x, center_y)
-        pieces.append(pd.DataFrame({
-            "reduced_id": group["tree_id"].to_numpy() if "tree_id" in group else group.index.to_numpy(),
-            "row_index": group["row_index"].to_numpy() if "row_index" in group else group.index.to_numpy(),
-            "crown_cell_id": [f"epsg{epsg}_c{c}_r{r}" for c, r in zip(col, row)],
-            "crown_cell_epsg": epsg,
-            "crown_cell_col": col,
-            "crown_cell_row": row,
-            "longitude": np.asarray(lon, dtype=np.float64),
-            "latitude": np.asarray(lat, dtype=np.float64),
-        }))
-    if not pieces:
-        raise ValueError("No valid crown coordinates were found.")
-    points = pd.concat(pieces, ignore_index=True)
-    counts = points.groupby("crown_cell_id").size().rename("tree_centered_record_count")
-    return points.drop_duplicates("crown_cell_id").merge(counts, on="crown_cell_id", how="left")
-
-
 def load_points(source: dict[str, object]) -> pd.DataFrame:
     path = Path(source["source_file"])
     frame = pd.read_csv(path, low_memory=False)
@@ -174,90 +135,7 @@ def load_points(source: dict[str, object]) -> pd.DataFrame:
         if missing:
             raise ValueError(f"{path} missing required columns: {missing}")
         return frame
-    return crown_cell_points(frame)
-
-
-def load_submitted_keys(manifest_path: Path) -> set[str]:
-    submitted: set[str] = set()
-    if not manifest_path.exists():
-        return submitted
-    with manifest_path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            record = json.loads(line)
-            key = record.get("key")
-            if key:
-                submitted.add(str(key))
-    return submitted
-
-
-def append_manifest(manifest_path: Path, record: dict[str, object]) -> None:
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    with manifest_path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, sort_keys=True) + "\n")
-
-
-def completed_output_exists(completed_dir: Path | None, export_prefix: str) -> bool:
-    if completed_dir is None or not completed_dir.exists():
-        return False
-    return any(completed_dir.glob(f"{export_prefix}*.csv"))
-
-
-def task_state(task: object) -> str:
-    if isinstance(task, dict):
-        return str(task.get("state") or task.get("metadata", {}).get("state") or "").upper()
-    return str(task.status().get("state") or "").upper()
-
-
-class TaskCapacityGate:
-    def __init__(self, max_active_tasks: int, poll_seconds: int, task_list_limit: int):
-        self.max_active_tasks = int(max_active_tasks)
-        self.poll_seconds = int(poll_seconds)
-        self.task_list_limit = int(task_list_limit)
-        self.cached_slots = 0
-
-    def acquire(self) -> None:
-        if self.cached_slots > 0:
-            self.cached_slots -= 1
-            print(f"  using cached Earth Engine task slot; remaining cached slots={self.cached_slots}", flush=True)
-            return
-        while True:
-            available = self.refresh_available_slots()
-            if available > 0:
-                self.cached_slots = available - 1
-                print(f"  reserving 1 task slot; cached slots after this submit={self.cached_slots}", flush=True)
-                return
-            print(
-                f"{self.max_active_tasks} Earth Engine tasks are READY/RUNNING; "
-                f"waiting {self.poll_seconds}s for capacity...",
-                flush=True,
-            )
-            time.sleep(self.poll_seconds)
-
-    def refresh_available_slots(self) -> int:
-        started = time.time()
-        print("  checking Earth Engine task capacity...", flush=True)
-        try:
-            tasks = ee.data.getTaskList()
-        except Exception:
-            tasks = ee.batch.Task.list()
-        print(f"  fetched {len(tasks):,} Earth Engine task(s) in {time.time() - started:.1f}s", flush=True)
-        inspected = tasks if self.task_list_limit <= 0 else tasks[: self.task_list_limit]
-        active_count = 0
-        for task in inspected:
-            if task_state(task) in ACTIVE_TASK_STATES:
-                active_count += 1
-                if active_count >= self.max_active_tasks:
-                    break
-        available = max(0, self.max_active_tasks - active_count)
-        suffix = "" if self.task_list_limit <= 0 else f" among {len(inspected):,} inspected recent task(s)"
-        print(
-            f"  task capacity available: {available} slot(s); "
-            f"{active_count}/{self.max_active_tasks} active{suffix}",
-            flush=True,
-        )
-        return available
+    return unique_crown_cell_points(frame)
 
 
 def export_name(description_prefix: str, city: str, year: int, batch_index: int) -> str:
@@ -423,7 +301,7 @@ def main() -> int:
         initialize_earth_engine(args)
     sources = discover_sources(args)
     submitted_keys = load_submitted_keys(args.manifest)
-    task_gate = None if args.dry_run else TaskCapacityGate(args.max_active_tasks, args.task_poll_seconds, args.task_list_limit)
+    task_gate = None if args.dry_run else TaskCapacityGate(ee, args.max_active_tasks, args.task_poll_seconds, args.task_list_limit)
     print(f"Discovered {len(sources):,} crown-centered embedding source(s)", flush=True)
     print(f"Years: {', '.join(str(year) for year in args.years)}", flush=True)
     print(f"Drive folder: {args.drive_folder}", flush=True)
