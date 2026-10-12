@@ -20,7 +20,7 @@ import random
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 import pandas as pd
@@ -32,6 +32,7 @@ if str(MODEL_DIR) not in sys.path:
 
 from model_components import PhenologyEncoder
 import model_components as train_base
+from discriminator_utils import require_generated_output_outside_source
 
 
 def parse_args() -> argparse.Namespace:
@@ -203,6 +204,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def bool_series(values: pd.Series) -> pd.Series:
+    """Parse boolean-like manifest values without treating ``'False'`` as true."""
     if pd.api.types.is_bool_dtype(values):
         return values.fillna(False)
     if pd.api.types.is_numeric_dtype(values):
@@ -211,10 +213,12 @@ def bool_series(values: pd.Series) -> pd.Series:
 
 
 def normalized_label_text(values: pd.Series) -> pd.Series:
+    """Normalize case and whitespace in candidate target labels."""
     return values.fillna("").astype(str).str.strip().str.lower().str.replace(r"\s+", " ", regex=True)
 
 
 def scientific_label_from_name(scientific_name: pd.Series, mode: str) -> pd.Series:
+    """Derive genus or binomial labels from cleaned scientific names."""
     sci = scientific_name.fillna("").astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
     tokens = sci.str.extract(r"^([A-Z][A-Za-z-]{2,})(?:\s+([a-z][a-z-]{2,}))?", expand=True)
     genus = tokens[0].fillna("").str.lower()
@@ -231,6 +235,7 @@ def scientific_label_from_name(scientific_name: pd.Series, mode: str) -> pd.Seri
 
 
 def build_target_labels(manifest: pd.DataFrame, args: argparse.Namespace) -> pd.Series:
+    """Construct the requested discriminator label for every manifest row."""
     if args.label_mode == "column":
         if args.label_column not in manifest.columns:
             raise SystemExit(f"Missing label column: {args.label_column}")
@@ -241,6 +246,7 @@ def build_target_labels(manifest: pd.DataFrame, args: argparse.Namespace) -> pd.
 
 
 def compute_sample_weights(manifest: pd.DataFrame, args: argparse.Namespace) -> np.ndarray:
+    """Calculate the fixed QA- and distance-based record weights."""
     weights = np.ones(len(manifest), dtype=np.float32)
     if args.use_qa_sample_weights:
         for column, weight in {
@@ -264,10 +270,12 @@ def compute_sample_weights(manifest: pd.DataFrame, args: argparse.Namespace) -> 
 
 
 def city_from_input_path(path: Path) -> str:
+    """Extract the normalized city token from a clean shard filename."""
     return path.name.split("_part", 1)[0].lower()
 
 
 def discover_shards(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Path]]:
+    """Discover aligned shard/metadata pairs and assemble their manifest."""
     selected = None if args.city_token is None else {value.strip().lower() for value in args.city_token if value.strip()}
     excluded = {value.strip().lower() for value in args.exclude_city_token if value.strip()}
     rows: list[pd.DataFrame] = []
@@ -328,7 +336,7 @@ class CleanShardArrays:
 
 
 class CleanShardStore:
-    def __init__(self, paths: dict[str, Path], max_cached_shards: int = 12):
+    def __init__(self, paths: dict[str, Path], max_cached_shards: int = 12) -> None:
         self.paths = dict(paths)
         self.max_cached_shards = max(1, int(max_cached_shards))
         self.cache: dict[str, CleanShardArrays] = {}
@@ -338,7 +346,7 @@ class CleanShardStore:
         if source_key in self.cache:
             return self.cache[source_key]
         path = self.paths[source_key]
-        data = np.load(path, allow_pickle=True)
+        data = np.load(path, allow_pickle=False)
         required = [
             "tree_centered_naip",
             "tree_centered_chm",
@@ -885,7 +893,11 @@ class CleanTreeDiscriminator(train_base.nn.Module):
         )
         self.classifier = train_base.nn.Linear(embedding_dim, class_count)
 
-    def encode(self, batch: dict[str, train_base.torch.Tensor]):
+    def encode(
+        self,
+        batch: dict[str, train_base.torch.Tensor],
+    ) -> tuple[train_base.torch.Tensor, train_base.torch.Tensor, train_base.torch.Tensor]:
+        """Encode modality inputs, apply sample-specific gates, and project them."""
         tree_image = batch["tree_image"]
         independent_tree_image = tree_image
         if (
@@ -927,12 +939,22 @@ class CleanTreeDiscriminator(train_base.nn.Module):
         z = train_base.F.normalize(self.projector(fused), dim=1)
         return z, gate_weights
 
-    def forward(self, batch: dict[str, train_base.torch.Tensor]):
+    def forward(
+        self,
+        batch: dict[str, train_base.torch.Tensor],
+    ) -> tuple[train_base.torch.Tensor, train_base.torch.Tensor, train_base.torch.Tensor]:
+        """Return class logits, normalized embeddings, and modality weights."""
         z, gates = self.encode(batch)
         return z, self.classifier(z), gates
 
 
-def supervised_contrastive_loss(z, labels, temperature: float, sample_weights=None):
+def supervised_contrastive_loss(
+    z: train_base.torch.Tensor,
+    labels: train_base.torch.Tensor,
+    temperature: float,
+    sample_weights: train_base.torch.Tensor | None = None,
+) -> train_base.torch.Tensor:
+    """Calculate the sample-weighted supervised contrastive objective."""
     labels = labels.view(-1, 1)
     mask = train_base.torch.eq(labels, labels.T).float().to(z.device)
     logits = train_base.torch.matmul(z, z.T) / temperature
@@ -994,7 +1016,7 @@ def f1_metrics(y_true: np.ndarray, y_pred: np.ndarray, class_count: int) -> dict
 
 
 class SourceShardBatchSampler:
-    def __init__(self, ds: CleanTreeDataset, batch_size: int, seed: int, shard_window_size: int = 8):
+    def __init__(self, ds: CleanTreeDataset, batch_size: int, seed: int, shard_window_size: int = 8) -> None:
         self.batch_size = int(batch_size)
         self.seed = int(seed)
         self.shard_window_size = max(1, int(shard_window_size))
@@ -1008,7 +1030,7 @@ class SourceShardBatchSampler:
     def __len__(self) -> int:
         return self.batch_count
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[list[int]]:
         rng = np.random.default_rng(self.seed + self.epoch)
         self.epoch += 1
         source_keys = list(self.by_source)
@@ -1032,7 +1054,8 @@ class SourceShardBatchSampler:
                 active = [i for i in active if batches_by_source[i]]
 
 
-def make_loader(ds: CleanTreeDataset, args: argparse.Namespace, train: bool):
+def make_loader(ds: CleanTreeDataset, args: argparse.Namespace, train: bool) -> Any:
+    """Construct either a shard-local training loader or deterministic evaluator."""
     if train and args.shard_local_train_batches:
         kwargs: dict[str, Any] = {
             "batch_sampler": SourceShardBatchSampler(ds, args.batch_size, args.seed, args.shard_window_size),
@@ -1056,7 +1079,15 @@ def make_loader(ds: CleanTreeDataset, args: argparse.Namespace, train: bool):
     return train_base.DataLoader(ds, **kwargs)
 
 
-def train_epoch(model, loader, optimizer, device, args, ce_weights):
+def train_epoch(
+    model: CleanTreeDiscriminator,
+    loader: Any,
+    optimizer: Any,
+    device: Any,
+    args: argparse.Namespace,
+    ce_weights: train_base.torch.Tensor,
+) -> dict[str, float]:
+    """Train the discriminator for one complete epoch."""
     model.train()
     total = {"loss": 0.0, "supcon": 0.0, "ce": 0.0, "n": 0}
     for batch in loader:
@@ -1083,7 +1114,14 @@ def train_epoch(model, loader, optimizer, device, args, ce_weights):
 
 
 @train_base.torch.no_grad()
-def evaluate(model, loader, device, class_count: int, collect: bool = False):
+def evaluate(
+    model: CleanTreeDiscriminator,
+    loader: Any,
+    device: Any,
+    class_count: int,
+    collect: bool = False,
+) -> dict[str, Any]:
+    """Evaluate one split and optionally retain record-level model outputs."""
     model.eval()
     y_true, y_pred = [], []
     gate_sum = None
@@ -1145,7 +1183,7 @@ def main() -> int:
             "has no CUDA-enabled PyTorch installation. Refusing to fall back silently to CPU."
         )
     device = train_base.torch.device(args.device)
-    run_dir = args.output_dir / args.run_name
+    run_dir = require_generated_output_outside_source(args.output_dir / args.run_name)
     if run_dir.exists() and any(run_dir.iterdir()) and not args.overwrite:
         raise SystemExit(f"Run directory exists and is not empty: {run_dir}; pass --overwrite.")
     run_dir.mkdir(parents=True, exist_ok=True)

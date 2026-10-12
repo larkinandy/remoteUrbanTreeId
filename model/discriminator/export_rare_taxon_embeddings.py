@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 
 import train_taxon_discriminator as trainer
+from discriminator_utils import require_generated_output_outside_source, sha256, write_json
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,7 +46,13 @@ def saved_array(checkpoint: dict, name: str) -> np.ndarray | None:
     return np.asarray(value, dtype=np.float32)
 
 
-def build_model(args: Namespace, checkpoint: dict, arrays: dict[str, np.ndarray | None], device):
+def build_model(
+    args: Namespace,
+    checkpoint: dict,
+    arrays: dict[str, np.ndarray | None],
+    device: object,
+) -> trainer.CleanTreeDiscriminator:
+    """Reconstruct the exact saved discriminator architecture for inference."""
     model = trainer.CleanTreeDiscriminator(
         class_count=len(checkpoint["label_to_index"]),
         structure_dim=int(arrays["structure_mean"].shape[0]),
@@ -71,6 +78,7 @@ def build_model(args: Namespace, checkpoint: dict, arrays: dict[str, np.ndarray 
 
 def main() -> int:
     cli = parse_args()
+    cli.output = require_generated_output_outside_source(cli.output)
     if cli.output.exists() and not cli.overwrite:
         raise SystemExit(f"Output exists; pass --overwrite to replace it: {cli.output}")
     device = trainer.train_base.torch.device(cli.device)
@@ -144,9 +152,11 @@ def main() -> int:
         "development_records": int(manifest["rare_split"].eq("development").sum()),
         "held_out_test_records": int(manifest["rare_split"].eq("test").sum()),
         "support_interval": [cli.minimum_records, cli.maximum_records],
-        "checkpoint": str(cli.checkpoint), "output": str(cli.output),
+        "checkpoint": str(cli.checkpoint),
+        "checkpoint_sha256": sha256(cli.checkpoint),
+        "output": str(cli.output),
     }
-    cli.output.with_suffix(".audit.json").write_text(json.dumps(audit, indent=2) + "\n", encoding="utf-8")
+    write_json(cli.output.with_suffix(".audit.json"), audit)
     print(json.dumps(audit, indent=2))
     return 0
 
