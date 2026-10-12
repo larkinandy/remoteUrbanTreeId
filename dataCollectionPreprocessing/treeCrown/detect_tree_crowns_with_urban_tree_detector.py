@@ -1,157 +1,131 @@
 #!/usr/bin/env python3
-"""Run UrbanTreeDetector and build the crown-center CSV used by this pipeline.
+"""Detect tree centers in indexed NAIP chip stacks using UrbanTreeDetector.
 
-UrbanTreeDetector writes one GeoJSON point file per input raster. This wrapper
-runs its official inference module, consolidates those points for one city, and
-writes ``<city>_tree_centers.csv`` for the inventory-to-crown spatial join.
+This is the crown-detection workflow used to create the study's
+``<city>_tree_centers.csv`` files. It applies SFANet to four-band NAIP chips,
+extracts confidence-map peaks, and joins each peak to the companion chip index.
+The detector implementation and weights are supplied explicitly so this
+repository does not silently depend on a mutable external checkout.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
+import importlib
 import json
-import re
-import subprocess
-import sys
 from pathlib import Path
-from typing import Any
+import sys
+
+import numpy as np
+import pandas as pd
+import yaml
+
+from tree_crown_inference_utils import attach_index_metadata, extract_peaks, normalize_chip_shape, predict_batches
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--detector-repo", type=Path, required=True, help="Clone of jonathanventura/urban-tree-detection.")
-    parser.add_argument("--input", type=Path, required=True, help="Input NAIP TIFF or directory of TIFFs.")
-    parser.add_argument("--city-token", required=True, help="Lowercase city identifier used by downstream products.")
-    parser.add_argument("--log-dir", type=Path, required=True, help="Detector model directory containing weights.best.h5.")
+    parser.add_argument("--detector-repo", type=Path, required=True, help="UrbanTreeDetector checkout at the frozen provenance commit.")
+    parser.add_argument("--model-dir", type=Path, required=True, help="Directory containing weights.best.h5 and params.yaml.")
+    parser.add_argument("--input-root", type=Path, required=True, help="City folders containing *_chips.npy and *_index.csv.")
     parser.add_argument("--output-root", type=Path, required=True)
-    parser.add_argument("--geojson-dir", type=Path, default=None, help="Intermediate detector GeoJSON directory.")
-    parser.add_argument("--python-executable", default=sys.executable, help="Python from the detector conda environment.")
+    parser.add_argument("--city-token", action="append", default=[])
     parser.add_argument("--bands", choices=("RGB", "RGBN"), default="RGBN")
-    parser.add_argument("--tile-size", type=int, default=2048)
-    parser.add_argument("--overlap", type=int, default=32)
-    parser.add_argument("--cell-epsg", type=int, default=None, help="Fallback EPSG when GeoJSON CRS metadata is absent.")
-    parser.add_argument("--skip-inference", action="store_true", help="Only consolidate existing GeoJSON files.")
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--pixel-size", type=float, default=0.6)
+    parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
 
-def validate_args(args: argparse.Namespace) -> None:
-    if not args.detector_repo.is_dir():
-        raise SystemExit(f"Detector repository not found: {args.detector_repo}")
-    if not args.input.exists():
-        raise SystemExit(f"Input not found: {args.input}")
-    if not args.log_dir.is_dir():
-        raise SystemExit(f"Detector log directory not found: {args.log_dir}")
-    weights = args.log_dir / "weights.best.h5"
-    if not weights.is_file():
-        raise SystemExit(f"Detector weights not found: {weights}")
-    if args.tile_size <= 0 or args.overlap <= 0:
-        raise SystemExit("--tile-size and --overlap must be positive.")
+def load_peak_parameters(model_dir: Path) -> dict[str, object]:
+    """Load the frozen local-maximum parameters stored with the model."""
+    with (model_dir / "params.yaml").open("r", encoding="utf-8") as stream:
+        parameters = yaml.safe_load(stream)
+    mode = parameters.get("mode", "rel")
+    return {
+        "min_distance": int(parameters["min_distance"]),
+        "threshold_abs": float(parameters["threshold_abs"]) if mode == "abs" else None,
+        "threshold_rel": float(parameters["threshold_rel"]) if mode == "rel" else None,
+    }
 
 
-def detector_output_path(input_path: Path, geojson_dir: Path) -> Path:
-    return geojson_dir if input_path.is_dir() else geojson_dir / f"{input_path.stem}.json"
+def build_model(detector_repo: Path, model_dir: Path, input_shape: tuple[int, int, int], bands: str):
+    """Import SFANet from the pinned checkout and load frozen weights."""
+    sys.path.insert(0, str(detector_repo.resolve()))
+    sfanet = importlib.import_module("models.SFANet")
+    preprocess_module = importlib.import_module("utils.preprocess")
+    preprocess = getattr(preprocess_module, f"preprocess_{bands}")
+    training_model, inference_model = sfanet.build_model(input_shape, preprocess_fn=preprocess)
+    training_model.load_weights(model_dir / "weights.best.h5")
+    return inference_model
 
 
-def run_detector(args: argparse.Namespace, geojson_dir: Path) -> None:
-    output = detector_output_path(args.input, geojson_dir)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    command = [
-        str(args.python_executable),
-        "-m",
-        "scripts.inference",
-        str(args.input.resolve()),
-        str(output.resolve()),
-        str(args.log_dir.resolve()),
-        "--bands",
-        args.bands,
-        "--tile_size",
-        str(args.tile_size),
-        "--overlap",
-        str(args.overlap),
-    ]
-    print("Running UrbanTreeDetector:", " ".join(command), flush=True)
-    subprocess.run(command, cwd=args.detector_repo, check=True)
-
-
-def epsg_from_crs(crs: Any) -> int | None:
-    if crs is None:
-        return None
-    match = re.search(r"(?:EPSG[:/]|::)(\d{4,6})", json.dumps(crs), flags=re.IGNORECASE)
-    return int(match.group(1)) if match else None
-
-
-def read_points(path: Path, fallback_epsg: int | None) -> list[dict[str, object]]:
-    with path.open("r", encoding="utf-8") as stream:
-        document = json.load(stream)
-    epsg = epsg_from_crs(document.get("crs")) or fallback_epsg
-    if epsg is None:
-        raise RuntimeError(f"Cannot determine projected EPSG for {path}; supply --cell-epsg.")
-    rows: list[dict[str, object]] = []
-    for feature_index, feature in enumerate(document.get("features", [])):
-        geometry = feature.get("geometry") or {}
-        coordinates = geometry.get("coordinates") or []
-        if geometry.get("type") != "Point" or len(coordinates) < 2:
+def discover_jobs(root: Path, selected: list[str]) -> list[tuple[str, Path, Path]]:
+    """Find one chip stack and index table for each selected city."""
+    requested = {token.strip().lower() for token in selected}
+    jobs: list[tuple[str, Path, Path]] = []
+    for city_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        city = city_dir.name.lower()
+        if requested and city not in requested:
             continue
-        properties = feature.get("properties") or {}
-        confidence = properties.get("confidence")
-        is_proxy = confidence is None
-        rows.append(
-            {
-                "approx_x": float(coordinates[0]),
-                "approx_y": float(coordinates[1]),
-                # Official UrbanTreeDetector GeoJSON currently omits peak scores.
-                # A value of 1 keeps detections compatible with the downstream
-                # confidence filter; confidence_is_proxy prevents misinterpretation.
-                "confidence": 1.0 if is_proxy else float(confidence),
-                "confidence_is_proxy": is_proxy,
-                "cell_epsg": epsg,
-                "source_raster": path.stem,
-                "source_feature_index": feature_index,
-            }
-        )
-    return rows
+        chips, indexes = sorted(city_dir.glob("*_chips.npy")), sorted(city_dir.glob("*_index.csv"))
+        if len(chips) != 1 or len(indexes) != 1:
+            raise RuntimeError(f"{city}: expected one *_chips.npy and one *_index.csv")
+        jobs.append((city, chips[0], indexes[0]))
+    return jobs
 
 
-def consolidate(geojson_dir: Path, output_csv: Path, fallback_epsg: int | None) -> int:
-    paths = sorted({*geojson_dir.glob("*.json"), *geojson_dir.glob("*.geojson")})
-    if not paths:
-        raise FileNotFoundError(f"No detector GeoJSON files found under {geojson_dir}")
-    rows: list[dict[str, object]] = []
-    seen: set[tuple[int, float, float]] = set()
-    for path in paths:
-        for row in read_points(path, fallback_epsg):
-            key = (int(row["cell_epsg"]), round(float(row["approx_x"]), 6), round(float(row["approx_y"]), 6))
-            if key not in seen:
-                seen.add(key)
-                rows.append(row)
-    output_csv.parent.mkdir(parents=True, exist_ok=True)
-    fields = [
-        "approx_x", "approx_y", "confidence", "confidence_is_proxy", "cell_epsg",
-        "source_raster", "source_feature_index",
-    ]
-    with output_csv.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fields)
-        writer.writeheader()
-        writer.writerows(rows)
-    return len(rows)
+def detect_city(city: str, chips_path: Path, index_path: Path, args: argparse.Namespace, peak_parameters: dict[str, object]) -> dict[str, object]:
+    """Run inference for one city and write its stable crown-center table."""
+    output = args.output_root / f"{city}_tree_centers.csv"
+    if output.exists() and not args.overwrite:
+        return {"city_token": city, "status": "exists", "output_name": output.name}
+    chips = normalize_chip_shape(np.load(chips_path, mmap_mode="r"), len(args.bands))
+    sample_height = max(64, int(np.ceil(chips.shape[1] / 32) * 32))
+    sample_width = max(64, int(np.ceil(chips.shape[2] / 32) * 32))
+    model = build_model(args.detector_repo, args.model_dir, (sample_height, sample_width, len(args.bands)), args.bands)
+    frames: list[pd.DataFrame] = []
+    for start, confidence in predict_batches(model, chips, args.batch_size):
+        peaks = extract_peaks(confidence, **peak_parameters)
+        if not peaks.empty:
+            peaks["chip_index"] += start
+            frames.append(peaks)
+        print(f"{city}: processed {start + len(confidence):,}/{len(chips):,} chips", flush=True)
+    peaks = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["chip_index", "x", "y", "confidence"])
+    peaks = attach_index_metadata(peaks, index_path, chips.shape[1:3], args.pixel_size)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    peaks.to_csv(output, index=False)
+    return {"city_token": city, "status": "completed", "chips": len(chips), "detections": len(peaks), "output_name": output.name}
+
+
+def validate_args(args: argparse.Namespace) -> None:
+    """Fail before model loading when inputs or frozen assets are missing."""
+    for path in (args.detector_repo, args.model_dir, args.input_root):
+        if not path.is_dir():
+            raise FileNotFoundError(path)
+    for name in ("weights.best.h5", "params.yaml"):
+        if not (args.model_dir / name).is_file():
+            raise FileNotFoundError(args.model_dir / name)
+    if args.batch_size <= 0 or args.pixel_size <= 0:
+        raise ValueError("--batch-size and --pixel-size must be positive")
 
 
 def main() -> int:
     args = parse_args()
     validate_args(args)
-    city = args.city_token.strip().lower()
-    if not city or not re.fullmatch(r"[a-z0-9_-]+", city):
-        raise SystemExit("--city-token may contain only lowercase letters, digits, underscores, and hyphens.")
-    geojson_dir = args.geojson_dir or args.output_root / "detector_geojson" / city
-    output_csv = args.output_root / f"{city}_tree_centers.csv"
-    if output_csv.exists() and not args.force:
-        raise SystemExit(f"Output already exists (use --force to replace): {output_csv}")
-    if not args.skip_inference:
-        run_detector(args, geojson_dir)
-    count = consolidate(geojson_dir, output_csv, args.cell_epsg)
-    print(f"Wrote {count:,} detected crown center(s): {output_csv}", flush=True)
+    args.output_root.mkdir(parents=True, exist_ok=True)
+    peak_parameters = load_peak_parameters(args.model_dir)
+    jobs = discover_jobs(args.input_root, args.city_token)
+    if not jobs:
+        raise SystemExit("No city chip stacks selected.")
+    results = [detect_city(city, chips, index, args, peak_parameters) for city, chips, index in jobs]
+    summary = pd.DataFrame(results).sort_values("city_token")
+    summary.to_csv(args.output_root / "tree_crown_detection_summary.csv", index=False)
+    (args.output_root / "tree_crown_detection_config.json").write_text(
+        json.dumps({"bands": args.bands, "batch_size": args.batch_size, "pixel_size": args.pixel_size, "peak_parameters": peak_parameters}, indent=2),
+        encoding="utf-8",
+    )
+    print(summary.to_string(index=False), flush=True)
     return 0
 
 

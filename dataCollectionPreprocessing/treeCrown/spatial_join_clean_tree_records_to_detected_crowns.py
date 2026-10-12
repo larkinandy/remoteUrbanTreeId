@@ -25,10 +25,6 @@ from pyproj import Transformer
 from scipy.spatial import cKDTree
 
 
-DEFAULT_TREE_METADATA_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_record_metadata_clean")
-DEFAULT_CROWN_ROOT = Path(r"H:\TreeCenteredModelInputs\detected_tree_crowns_clean")
-DEFAULT_OUTPUT_ROOT = Path(r"H:\TreeCenteredModelInputs\tree_to_detected_crowns_clean")
-
 CROWN_OUTPUT_COLUMNS = [
     "match_distance_m",
     "crown_id",
@@ -52,16 +48,16 @@ class CityJob:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--tree-metadata-root", type=Path, default=DEFAULT_TREE_METADATA_ROOT)
-    parser.add_argument("--crown-root", type=Path, default=DEFAULT_CROWN_ROOT)
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--tree-metadata-root", type=Path, required=True)
+    parser.add_argument("--crown-root", type=Path, required=True)
+    parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--summary-csv", type=Path, default=None)
     parser.add_argument("--city-token", action="append", default=None, help="Optional city token(s). Repeatable.")
     parser.add_argument("--exclude-city-token", action="append", default=[], help="City token(s) to skip. Repeatable.")
     parser.add_argument("--match-radius-m", type=float, default=5.0)
     parser.add_argument("--min-crown-confidence", type=float, default=0.10)
     parser.add_argument("--parallel-workers", type=int, default=1)
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
 
@@ -156,7 +152,7 @@ def empty_match_frame(trees: pd.DataFrame) -> pd.DataFrame:
 
 
 def match_city(job: CityJob, args: argparse.Namespace) -> dict[str, object]:
-    if job.output_csv.exists() and not args.force:
+    if job.output_csv.exists() and not args.overwrite:
         existing_rows = sum(1 for _ in open(job.output_csv, "rb")) - 1
         return {
             "city_token": job.city_token,
@@ -165,7 +161,7 @@ def match_city(job: CityJob, args: argparse.Namespace) -> dict[str, object]:
             "crown_rows": np.nan,
             "matched_rows": max(existing_rows, 0),
             "match_rate": np.nan,
-            "output_csv": str(job.output_csv),
+            "output_name": job.output_csv.name,
         }
     if not job.tree_metadata_csv.exists():
         raise FileNotFoundError(job.tree_metadata_csv)
@@ -242,7 +238,7 @@ def match_city(job: CityJob, args: argparse.Namespace) -> dict[str, object]:
         "matched_rows": int(len(matched)),
         "unmatched_rows": int(len(trees) - len(matched)),
         "match_rate": float(match_rate),
-        "output_csv": str(job.output_csv),
+        "output_name": job.output_csv.name,
     }
 
 
@@ -263,7 +259,7 @@ def worker(payload: tuple[CityJob, argparse.Namespace]) -> dict[str, object]:
             "city_token": job.city_token,
             "status": "failed",
             "error": str(error),
-            "output_csv": str(job.output_csv),
+            "output_name": job.output_csv.name,
         }
 
 
