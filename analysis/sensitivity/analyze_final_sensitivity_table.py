@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Reproduce the final QA-screened independent-test sensitivity table."""
+"""Reproduce the final independent-test sensitivity table.
+
+The script joins canonical ensemble predictions to finalized record-level
+quality variables, evaluates both ``k11`` and ``collapsed_k6`` label spaces,
+and writes a compact provenance audit. The vegetation-height contrast retains
+the warning records by design; all thresholds come from the frozen sensitivity
+configuration.
+"""
 
 from __future__ import annotations
 
@@ -28,15 +35,15 @@ DEFAULT_GROUPING = ROOT / "config" / "final_grouping.json"
 def parse_args() -> argparse.Namespace:
     """Parse explicit source artifacts used to construct every final stratum."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--predictions", type=Path, required=True)
-    parser.add_argument("--sensitivity-variables", type=Path, required=True)
-    parser.add_argument("--mixed-pixel-proxies", type=Path, required=True)
-    parser.add_argument("--filter-variables", type=Path, required=True)
-    parser.add_argument("--naip-year-variables", type=Path, required=True)
-    parser.add_argument("--complete-shard-root", type=Path, required=True)
-    parser.add_argument("--grouping-config", type=Path, default=DEFAULT_GROUPING)
-    parser.add_argument("--sensitivity-config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--predictions", type=Path, required=True, help="Final top-checkpoint ensemble NPZ.")
+    parser.add_argument("--sensitivity-variables", type=Path, required=True, help="Record-keyed QA and provenance CSV.")
+    parser.add_argument("--mixed-pixel-proxies", type=Path, required=True, help="Record-keyed NAIP/CHM proxy CSV.")
+    parser.add_argument("--filter-variables", type=Path, required=True, help="Record-keyed inventory/LiDAR timing CSV.")
+    parser.add_argument("--naip-year-variables", type=Path, required=True, help="Record-keyed NAIP/inventory timing CSV.")
+    parser.add_argument("--complete-shard-root", type=Path, required=True, help="Root containing complete city shard NPZ files.")
+    parser.add_argument("--grouping-config", type=Path, default=DEFAULT_GROUPING, help="Canonical k11-to-collapsed_k6 mapping JSON.")
+    parser.add_argument("--sensitivity-config", type=Path, default=DEFAULT_CONFIG, help="Frozen thresholds and reporting rules JSON.")
+    parser.add_argument("--output-dir", type=Path, required=True, help="External directory for generated tables and audit metadata.")
     return parser.parse_args()
 
 
@@ -176,7 +183,7 @@ def main() -> int:
         arguments.output_dir / "final_sensitivity_table_collapsed_k6.csv", index=False
     )
     inputs = {
-        name: {"path": str(path), "sha256": file_sha256(path)}
+        name: {"file_name": path.name, "sha256": file_sha256(path)}
         for name, path in {
             "predictions": arguments.predictions,
             "sensitivity_variables": arguments.sensitivity_variables,
@@ -188,7 +195,7 @@ def main() -> int:
         }.items()
     }
     inputs["complete_shard_root"] = {
-        "path": str(arguments.complete_shard_root),
+        "artifact_role": "complete city shards",
         "shard_count": len(list(arguments.complete_shard_root.glob(
             "*/*_tree_centered_complete_inputs.npz"
         ))),

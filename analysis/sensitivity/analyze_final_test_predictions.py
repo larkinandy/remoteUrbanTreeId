@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Summarize QA-screened final predictions by taxon provenance and city."""
+"""Summarize QA-screened final predictions by taxon provenance and city.
+
+The script verifies the canonical probability-sum collapse, joins finalized
+test metadata by stable record key, removes the configured QA warning, and
+reports identically named metrics for ``k11`` and ``collapsed_k6``.
+"""
 
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +18,7 @@ import pandas as pd
 from sensitivity_utils import (
     load_configuration,
     load_predictions,
+    file_sha256,
     merge_one_to_one,
     metric_set,
     screen_qa,
@@ -26,11 +33,11 @@ DEFAULT_CONFIG = ROOT / "analysis" / "sensitivity" / "sensitivity_config.json"
 def parse_args() -> argparse.Namespace:
     """Parse finalized prediction, metadata, configuration, and output paths."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--predictions", type=Path, required=True)
-    parser.add_argument("--sensitivity-variables", type=Path, required=True)
-    parser.add_argument("--grouping-config", type=Path, default=DEFAULT_GROUPING)
-    parser.add_argument("--sensitivity-config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--predictions", type=Path, required=True, help="Final top-checkpoint ensemble NPZ.")
+    parser.add_argument("--sensitivity-variables", type=Path, required=True, help="Record-keyed QA and taxon-provenance CSV.")
+    parser.add_argument("--grouping-config", type=Path, default=DEFAULT_GROUPING, help="Canonical k11-to-collapsed_k6 mapping JSON.")
+    parser.add_argument("--sensitivity-config", type=Path, default=DEFAULT_CONFIG, help="Frozen sensitivity-analysis configuration JSON.")
+    parser.add_argument("--output-dir", type=Path, required=True, help="External directory for generated summaries.")
     return parser.parse_args()
 
 
@@ -51,7 +58,7 @@ def summarize(frame: pd.DataFrame, grouping_column: str) -> pd.DataFrame:
 
 
 def main() -> int:
-    """Create provenance, city, and collapsed confusion summaries."""
+    """Create provenance, city, confusion, and portable audit summaries."""
     arguments = parse_args()
     configuration = load_configuration(arguments.sensitivity_config)
     qa_column = str(configuration["qa_warning_excluded"])
@@ -64,6 +71,7 @@ def main() -> int:
         metadata,
         "sensitivity variables",
     )
+    total_records = len(frame)
     frame = screen_qa(frame, qa_column)
     provenance = configuration["taxon_provenance"]
     frame["taxon_provenance"] = np.where(
@@ -87,6 +95,33 @@ def main() -> int:
         index=[f"true_{index + 1}" for index in range(6)],
         columns=[f"pred_{index + 1}" for index in range(6)],
     ).to_csv(arguments.output_dir / "collapsed_k6_confusion_counts.csv")
+    audit = {
+        "test_records_total": int(total_records),
+        "qa_screened_records": int(len(frame)),
+        "qa_warning_records_excluded": int(total_records - len(frame)),
+        "canonical_grouping_validation_passed": True,
+        "inputs": {
+            "predictions": {
+                "file_name": arguments.predictions.name,
+                "sha256": file_sha256(arguments.predictions),
+            },
+            "sensitivity_variables": {
+                "file_name": arguments.sensitivity_variables.name,
+                "sha256": file_sha256(arguments.sensitivity_variables),
+            },
+            "grouping_config": {
+                "file_name": arguments.grouping_config.name,
+                "sha256": file_sha256(arguments.grouping_config),
+            },
+            "sensitivity_config": {
+                "file_name": arguments.sensitivity_config.name,
+                "sha256": file_sha256(arguments.sensitivity_config),
+            },
+        },
+    }
+    (arguments.output_dir / "analysis_metadata.json").write_text(
+        json.dumps(audit, indent=2), encoding="utf-8"
+    )
     print(by_provenance.to_string(index=False))
     return 0
 

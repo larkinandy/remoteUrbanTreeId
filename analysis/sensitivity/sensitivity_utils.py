@@ -1,4 +1,11 @@
-"""Shared loading, validation, screening, and metric helpers for sensitivity analyses."""
+#!/usr/bin/env python3
+"""Shared, schema-aware helpers for final-model sensitivity analyses.
+
+The functions in this module centralize record-key construction, canonical
+``k11`` to ``collapsed_k6`` validation, Boolean parsing, metric calculation,
+and audited one-to-one joins. Keeping those operations here prevents small
+implementation differences across publication tables and figures.
+"""
 
 from __future__ import annotations
 
@@ -117,8 +124,21 @@ def file_sha256(path: Path) -> str:
 
 
 def merge_one_to_one(frame: pd.DataFrame, addition: pd.DataFrame, name: str) -> pd.DataFrame:
-    """Join record metadata and reject duplicate keys or missing prediction matches."""
+    """Join metadata to a record frame with strict key-cardinality auditing.
+
+    Every record already present in ``frame`` must occur exactly once in
+    ``addition``. Extra metadata rows are permitted because source tables may
+    cover training and validation records in addition to the requested test
+    population.
+    """
+    if frame.record_key.duplicated().any():
+        raise ValueError("Duplicate record keys in the base analysis frame")
     if addition.record_key.duplicated().any():
         raise ValueError(f"Duplicate record keys in {name}")
+    missing = set(frame.record_key) - set(addition.record_key)
+    if missing:
+        raise ValueError(f"{name} is missing {len(missing):,} required record keys")
     merged = frame.merge(addition, on="record_key", how="left", validate="one_to_one")
+    if len(merged) != len(frame):
+        raise ValueError(f"Joining {name} changed the analysis record count")
     return merged

@@ -1,8 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Evaluate final-model performance by CHM-supported Sentinel-cell vegetation.
 
 The proxy is the fraction of valid CHM pixels in the aligned Sentinel-2 cell
-with height >= 2 m. It is not a focal-crown coverage estimate.
+with height at or above the configured vegetation-height threshold. It is a
+neighborhood occupancy measure, not a focal-crown coverage estimate. Inputs
+are explicit so the script can be reproduced outside the original workstation.
 """
 
 from __future__ import annotations
@@ -14,45 +16,76 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from sensitivity_utils import boolean_series, load_predictions, metric_set
+from sensitivity_utils import (
+    boolean_series,
+    file_sha256,
+    load_configuration,
+    load_predictions,
+    merge_one_to_one,
+    metric_set,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CONFIG = ROOT / "analysis" / "sensitivity" / "sensitivity_config.json"
+DEFAULT_GROUPING = ROOT / "config" / "final_grouping.json"
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser()
-    p.add_argument(
-        "--predictions",
-        type=Path,
-        default=Path("outputs/reviewer_revision/final_pruned_k11_test_top5_ensemble/ensemble_predictions.npz"),
-    )
-    p.add_argument(
-        "--sensitivity-variables",
-        type=Path,
-        default=Path("outputs/reviewer_revision/final_pruned_sensitivity_table_with_taxon_provenance/final_test_sensitivity_variables.csv.gz"),
-    )
-    p.add_argument(
-        "--mixed-pixel-proxies",
-        type=Path,
-        default=Path("outputs/reviewer_revision/sentinel_mixed_pixel_proxies_reportable_v1/record_level_reportable_mixed_pixel_proxies.csv.gz"),
-    )
-    p.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path("outputs/reviewer_revision/chm_mixed_pixel_stratified_sensitivity"),
-    )
-    p.add_argument(
-        "--grouping-config", type=Path, default=ROOT / "config" / "final_grouping.json"
-    )
-    p.add_argument("--threshold", type=float, default=0.25)
-    p.add_argument("--minimum-chm-coverage", type=float, default=0.50)
-    return p.parse_args()
+    """Parse explicit data sources and optional configuration overrides."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--predictions", type=Path, required=True, help="Final ensemble prediction NPZ.")
+    parser.add_argument("--sensitivity-variables", type=Path, required=True, help="Record-keyed QA-variable CSV.")
+    parser.add_argument("--mixed-pixel-proxies", type=Path, required=True, help="Record-keyed CHM proxy CSV.")
+    parser.add_argument("--output-dir", type=Path, required=True, help="External directory for generated tables and records.")
+    parser.add_argument("--grouping-config", type=Path, default=DEFAULT_GROUPING, help="Canonical k11-to-collapsed_k6 mapping JSON.")
+    parser.add_argument("--sensitivity-config", type=Path, default=DEFAULT_CONFIG, help="Frozen sensitivity thresholds JSON.")
+    parser.add_argument("--threshold", type=float, help="Override the configured tall-vegetation fraction threshold.")
+    parser.add_argument("--minimum-chm-coverage", type=float, help="Override the configured minimum valid CHM fraction.")
+    return parser.parse_args()
+
+
+def calculate_stratified_metrics(
+    frame: pd.DataFrame,
+    threshold: float,
+    minimum_coverage: float,
+) -> pd.DataFrame:
+    """Calculate performance in low and high CHM-occupancy strata."""
+    rows: list[dict[str, object]] = []
+    criteria = (f"<{threshold:.0%}", f">={threshold:.0%}")
+    for label_space, class_count in (("collapsed_k6", 6), ("k11", 11)):
+        for criterion in criteria:
+            subset = frame.loc[frame.chm_proxy_stratum.eq(criterion)]
+            row = {
+                "label_space": label_space,
+                "criterion": criterion,
+                "minimum_chm_valid_coverage": minimum_coverage,
+                "tall_vegetation_fraction_threshold": threshold,
+            }
+            row.update(
+                metric_set(
+                    subset[f"label_{label_space}"].to_numpy(),
+                    subset[f"prediction_{label_space}"].to_numpy(),
+                    class_count,
+                )
+            )
+            rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def main() -> None:
-    """Calculate CHM-supported neighborhood-vegetation sensitivity metrics."""
+    """Calculate CHM-supported neighborhood-vegetation metrics and audits."""
     args = parse_args()
+    configuration = load_configuration(args.sensitivity_config)
+    thresholds = configuration["thresholds"]
+    threshold = float(
+        thresholds["chm_tall_vegetation_fraction"] if args.threshold is None else args.threshold
+    )
+    minimum_coverage = float(
+        thresholds["chm_valid_fraction"]
+        if args.minimum_chm_coverage is None
+        else args.minimum_chm_coverage
+    )
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     pred = load_predictions(args.predictions, args.grouping_config)
@@ -71,8 +104,8 @@ def main() -> None:
             "chm_tall_vegetation_fraction_of_valid_area",
         ],
     )
-    frame = pred.merge(qa, on="record_key", how="left", validate="one_to_one")
-    frame = frame.merge(proxy, on="record_key", how="left", validate="one_to_one")
+    frame = merge_one_to_one(pred, qa, "sensitivity variables")
+    frame = merge_one_to_one(frame, proxy, "mixed-pixel proxies")
     if frame.qa_flag_low_vegetated_height_with_lidar.isna().any():
         raise ValueError("Some prediction records lack QA flags")
 
@@ -80,45 +113,29 @@ def main() -> None:
     frame["chm_proxy_eligible"] = (
         frame.qa_screened
         & frame.chm_tall_vegetation_fraction_of_valid_area.notna()
-        & frame.chm_valid_fraction_in_cell.ge(args.minimum_chm_coverage)
+        & frame.chm_valid_fraction_in_cell.ge(minimum_coverage)
     )
     frame["chm_proxy_stratum"] = pd.NA
     eligible = frame.chm_proxy_eligible
-    frame.loc[eligible & frame.chm_tall_vegetation_fraction_of_valid_area.lt(args.threshold), "chm_proxy_stratum"] = (
-        f"<{args.threshold:.0%}"
+    frame.loc[eligible & frame.chm_tall_vegetation_fraction_of_valid_area.lt(threshold), "chm_proxy_stratum"] = (
+        f"<{threshold:.0%}"
     )
-    frame.loc[eligible & frame.chm_tall_vegetation_fraction_of_valid_area.ge(args.threshold), "chm_proxy_stratum"] = (
-        f">={args.threshold:.0%}"
+    frame.loc[eligible & frame.chm_tall_vegetation_fraction_of_valid_area.ge(threshold), "chm_proxy_stratum"] = (
+        f">={threshold:.0%}"
     )
 
-    rows = []
-    for label_space, class_count in (("collapsed_k6", 6), ("k11", 11)):
-        for stratum in (f"<{args.threshold:.0%}", f">={args.threshold:.0%}"):
-            part = frame[frame.chm_proxy_stratum.eq(stratum)]
-            row = {
-                "label_space": label_space,
-                "criterion": stratum,
-                "minimum_chm_valid_coverage": args.minimum_chm_coverage,
-                "tall_vegetation_fraction_threshold": args.threshold,
-            }
-            row.update(metric_set(
-                part[f"label_{label_space}"].to_numpy(),
-                part[f"prediction_{label_space}"].to_numpy(),
-                class_count,
-            ))
-            rows.append(row)
-    results = pd.DataFrame(rows)
+    results = calculate_stratified_metrics(frame, threshold, minimum_coverage)
     results.to_csv(args.output_dir / "chm_mixed_pixel_stratified_performance.csv", index=False)
 
     deltas = []
     for label_space in ("collapsed_k6", "k11"):
         part = results.set_index(["label_space", "criterion"]).loc[label_space]
-        high = part.loc[f">={args.threshold:.0%}"]
-        low = part.loc[f"<{args.threshold:.0%}"]
+        high = part.loc[f">={threshold:.0%}"]
+        low = part.loc[f"<{threshold:.0%}"]
         deltas.append(
             {
                 "label_space": label_space,
-                "contrast": f">={args.threshold:.0%} minus <{args.threshold:.0%}",
+                "contrast": f">={threshold:.0%} minus <{threshold:.0%}",
                 "accuracy_difference": high.accuracy - low.accuracy,
                 "macro_f1_difference": high.macro_f1 - low.macro_f1,
                 "weighted_f1_difference": high.weighted_f1 - low.weighted_f1,
@@ -139,10 +156,17 @@ def main() -> None:
         "excluded_for_missing_or_low_chm_coverage": int(
             frame.qa_screened.sum() - frame.chm_proxy_eligible.sum()
         ),
-        "minimum_chm_valid_coverage": args.minimum_chm_coverage,
-        "tall_vegetation_fraction_threshold": args.threshold,
+        "minimum_chm_valid_coverage": minimum_coverage,
+        "tall_vegetation_fraction_threshold": threshold,
         "proxy_definition": "Fraction of valid CHM pixels in the aligned 10 x 10 m Sentinel-2 cell with height >= 2 m.",
         "interpretation_warning": "This is neighborhood-scale tall-vegetation occupancy, not focal-tree crown coverage.",
+        "inputs": {
+            "predictions": {"file_name": args.predictions.name, "sha256": file_sha256(args.predictions)},
+            "sensitivity_variables": {"file_name": args.sensitivity_variables.name, "sha256": file_sha256(args.sensitivity_variables)},
+            "mixed_pixel_proxies": {"file_name": args.mixed_pixel_proxies.name, "sha256": file_sha256(args.mixed_pixel_proxies)},
+            "grouping_config": {"file_name": args.grouping_config.name, "sha256": file_sha256(args.grouping_config)},
+            "sensitivity_config": {"file_name": args.sensitivity_config.name, "sha256": file_sha256(args.sensitivity_config)},
+        },
     }
     (args.output_dir / "analysis_metadata.json").write_text(json.dumps(audit, indent=2), encoding="utf-8")
     frame[[
