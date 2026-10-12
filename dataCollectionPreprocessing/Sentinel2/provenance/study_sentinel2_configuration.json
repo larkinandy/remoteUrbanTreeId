@@ -1,0 +1,23 @@
+{
+  "source_surface_reflectance_collection": "COPERNICUS/S2_SR_HARMONIZED",
+  "source_cloud_probability_collection": "COPERNICUS/S2_CLOUD_PROBABILITY",
+  "start_date": "2021-01-01",
+  "end_date_exclusive": "2024-01-01",
+  "original_export_window_days": 30,
+  "supplemental_export_window_days": 15,
+  "export_scale_m": 10,
+  "scene_cloud_filter_percent": 70,
+  "cloud_probability_threshold_percent": 40,
+  "excluded_scl_classes": [0, 1, 3, 8, 9, 10, 11],
+  "exported_reflectance_bands": ["B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B11", "B12"],
+  "quality_bands": ["SCL"],
+  "regular_interpolation_interval_days": 15,
+  "interpolation_method": "linear between valid observations",
+  "phenology_feature_count": 95,
+  "spatial_assignment": "Sentinel-2 grid cell containing the detected crown-center coordinate",
+  "final_sidecar_key": "tree_id",
+  "notes": [
+    "Observed and interpolated values remain distinguishable through quality-mask fields.",
+    "The Sentinel-2 signal represents the full 10 m cell and is not an individual-crown measurement."
+  ]
+}

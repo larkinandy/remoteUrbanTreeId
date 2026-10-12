@@ -17,7 +17,6 @@ from datetime import date, datetime, timedelta
 import json
 from pathlib import Path
 import re
-import sys
 import time
 from typing import Any
 
@@ -25,39 +24,22 @@ import numpy as np
 import pandas as pd
 
 
-HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
-SHARD_SCRIPTS = HERE.parent / "Shard"
-if str(SHARD_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SHARD_SCRIPTS))
-
-import assemble_clean_tree_id_centered_model_input_shards as shard_schema
 import interpolate_sentinel_cell_time_series as interpolated_sentinel
 import sentinel_cell_features as sentinel_base
 import sentinel_phenology_metrics as derived_metrics
-
-
-DEFAULT_RECORD_INDEX_ROOT = Path(r"E:\TreeCenteredModelInputs\tree_centered_record_index")
-DEFAULT_ORIGINAL_TIMESERIES_DIR = Path(r"E:\cell\sentinel2_timeseries")
-DEFAULT_SUPPLEMENTAL_TIMESERIES_DIR = Path(r"E:\TreeCenteredModelInputs\tree_centered_sentinel_timeseries_supplemental")
-DEFAULT_ORIGINAL_RAW_SENTINEL_DIR = Path(r"E:\TreeId\Sentinel2")
-DEFAULT_ADDITIONAL_RAW_SENTINEL_DIR = Path(r"E:\TreeCenterSentinel")
-DEFAULT_OUTPUT_ROOT = Path(r"E:\TreeCenteredModelInputs\tree_centered_sentinel_phenology")
-DEFAULT_TIMESERIES_OUTPUT_ROOT = Path(r"E:\TreeCenteredModelInputs\tree_centered_sentinel_timeseries")
-DEFAULT_MISSING_RAW_CELL_ROOT = Path(r"E:\TreeCenteredModelInputs\tree_centered_sentinel_missing_raw15day")
+from sentinel_schema import SENTINEL_SEQUENCE_COLUMNS
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--record-index-root", type=Path, default=DEFAULT_RECORD_INDEX_ROOT)
-    parser.add_argument("--original-timeseries-dir", type=Path, default=DEFAULT_ORIGINAL_TIMESERIES_DIR)
-    parser.add_argument("--supplemental-timeseries-dir", type=Path, default=DEFAULT_SUPPLEMENTAL_TIMESERIES_DIR)
-    parser.add_argument("--original-raw-sentinel-dir", type=Path, default=DEFAULT_ORIGINAL_RAW_SENTINEL_DIR)
-    parser.add_argument("--additional-raw-sentinel-dir", type=Path, default=DEFAULT_ADDITIONAL_RAW_SENTINEL_DIR)
-    parser.add_argument("--missing-raw-cell-root", type=Path, default=DEFAULT_MISSING_RAW_CELL_ROOT)
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--timeseries-output-root", type=Path, default=DEFAULT_TIMESERIES_OUTPUT_ROOT)
+    parser.add_argument("--record-index-root", type=Path, required=True)
+    parser.add_argument("--original-timeseries-dir", type=Path, required=True)
+    parser.add_argument("--supplemental-timeseries-dir", type=Path, required=True)
+    parser.add_argument("--original-raw-sentinel-dir", type=Path, required=True)
+    parser.add_argument("--additional-raw-sentinel-dir", type=Path, required=True)
+    parser.add_argument("--missing-raw-cell-root", type=Path, required=True)
+    parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--timeseries-output-root", type=Path, required=True)
     parser.add_argument("--stage", choices=["interpolate", "compute", "all"], default="all")
     parser.add_argument(
         "--prefer-separate-timeseries",
@@ -126,7 +108,7 @@ def parse_args() -> argparse.Namespace:
             "to contain every expected date-window/batch file before deriving phenology."
         ),
     )
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -397,7 +379,7 @@ def plan_complete_additional_raw_batches(
         "needed_batches": int(len(needed_batches)),
         "complete_needed_batches": int(len(complete_needed_batches)),
         "excluded_additional_cells": int(len(excluded_cells)),
-        "points_file": str(points_path),
+        "points_file": points_path.name,
     }
     return complete_cells, excluded_cells, filtered_paths, status
 
@@ -405,7 +387,7 @@ def plan_complete_additional_raw_batches(
 def read_interpolated_timeseries(paths: list[Path], needed_rows: set[int], chunksize: int) -> dict[int, pd.DataFrame]:
     if not paths or not needed_rows:
         return {}
-    wanted = ["row_index", "date"] + list(shard_schema.SENTINEL_SEQUENCE_COLUMNS)
+    wanted = ["row_index", "date"] + list(SENTINEL_SEQUENCE_COLUMNS)
     pieces: list[pd.DataFrame] = []
     for path in paths:
         header = set(pd.read_csv(path, nrows=0).columns)
@@ -425,7 +407,7 @@ def read_interpolated_timeseries(paths: list[Path], needed_rows: set[int], chunk
         return {}
     frame = pd.concat(pieces, ignore_index=True)
     frame = frame.sort_values(["row_index", "date"], kind="stable").drop_duplicates(["row_index", "date"], keep="first")
-    for column in shard_schema.SENTINEL_SEQUENCE_COLUMNS:
+    for column in SENTINEL_SEQUENCE_COLUMNS:
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
     return {int(row_index): group for row_index, group in frame.groupby("row_index", sort=False)}
 
@@ -681,9 +663,9 @@ def load_raw_daily_observations(
             interpolate_elapsed = time.perf_counter() - phase_started
             if frame.empty:
                 continue
-            keep = ["row_index", "date"] + list(shard_schema.SENTINEL_SEQUENCE_COLUMNS)
+            keep = ["row_index", "date"] + list(SENTINEL_SEQUENCE_COLUMNS)
             frame = frame[[column for column in keep if column in frame.columns]].copy()
-            for column in shard_schema.SENTINEL_SEQUENCE_COLUMNS:
+            for column in SENTINEL_SEQUENCE_COLUMNS:
                 if column not in frame:
                     frame[column] = 0.0
                 frame[column] = pd.to_numeric(frame[column], errors="coerce")
@@ -807,9 +789,9 @@ def load_raw_daily_observations(
     )
     if frame.empty:
         return {}
-    keep = ["row_index", "date"] + list(shard_schema.SENTINEL_SEQUENCE_COLUMNS)
+    keep = ["row_index", "date"] + list(SENTINEL_SEQUENCE_COLUMNS)
     frame = frame[[column for column in keep if column in frame.columns]].copy()
-    for column in shard_schema.SENTINEL_SEQUENCE_COLUMNS:
+    for column in SENTINEL_SEQUENCE_COLUMNS:
         if column not in frame:
             frame[column] = 0.0
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
@@ -825,12 +807,12 @@ def load_raw_daily_observations(
 
 def compute_phenology(group: pd.DataFrame, outlier_abs: float) -> np.ndarray:
     group = group.sort_values("date", kind="stable")
-    values = group[list(shard_schema.SENTINEL_SEQUENCE_COLUMNS)].to_numpy(dtype=np.float32, copy=True)
+    values = group[list(SENTINEL_SEQUENCE_COLUMNS)].to_numpy(dtype=np.float32, copy=True)
     mask = np.ones(values.shape[0], dtype=bool)
     return derived_metrics.compute_sentinel_phenology(
         values,
         mask,
-        list(shard_schema.SENTINEL_SEQUENCE_COLUMNS),
+        list(SENTINEL_SEQUENCE_COLUMNS),
         float(outlier_abs),
     ).astype(np.float32)
 
@@ -872,7 +854,7 @@ def groups_to_frame(groups: dict[int, pd.DataFrame], source_code: int) -> pd.Dat
         frame.insert(0, "source_code", int(source_code))
         pieces.append(frame)
     if not pieces:
-        return pd.DataFrame(columns=["source_code", "sentinel_cell_id", "row_index", "date", *shard_schema.SENTINEL_SEQUENCE_COLUMNS])
+        return pd.DataFrame(columns=["source_code", "sentinel_cell_id", "row_index", "date", *SENTINEL_SEQUENCE_COLUMNS])
     return pd.concat(pieces, ignore_index=True)
 
 
@@ -904,7 +886,7 @@ def write_interpolated_time_series(
 def read_tree_centered_time_series(path: Path, chunksize: int) -> tuple[dict[int, pd.DataFrame], dict[int, pd.DataFrame]]:
     if not path.exists():
         raise FileNotFoundError(f"Missing interpolated Sentinel time-series file: {path}")
-    wanted = ["source_code", "sentinel_cell_id", "date"] + list(shard_schema.SENTINEL_SEQUENCE_COLUMNS)
+    wanted = ["source_code", "sentinel_cell_id", "date"] + list(SENTINEL_SEQUENCE_COLUMNS)
     header = set(pd.read_csv(path, nrows=0).columns)
     missing = set(wanted).difference(header)
     if missing:
@@ -917,7 +899,7 @@ def read_tree_centered_time_series(path: Path, chunksize: int) -> tuple[dict[int
         chunk = chunk.dropna(subset=["source_code", "sentinel_cell_id", "date"])
         if chunk.empty:
             continue
-        for column in shard_schema.SENTINEL_SEQUENCE_COLUMNS:
+        for column in SENTINEL_SEQUENCE_COLUMNS:
             chunk[column] = pd.to_numeric(chunk[column], errors="coerce")
         pieces.append(chunk)
     if not pieces:
@@ -964,7 +946,7 @@ def process_city(args: argparse.Namespace, city: str, index_path: Path) -> dict[
     out_dir = Path(args.output_root) / city
     out_path = out_dir / f"{city}_tree_centered_sentinel_phenology.npz"
     print(f"{city}: starting Sentinel stage={args.stage} from {index_path}", flush=True)
-    if args.stage in {"compute", "all"} and out_path.exists() and not args.force:
+    if args.stage in {"compute", "all"} and out_path.exists() and not args.overwrite:
         status = existing_sidecar_status(args, out_path, index_path)
         if status["complete"]:
             return {
@@ -1033,7 +1015,7 @@ def process_city(args: argparse.Namespace, city: str, index_path: Path) -> dict[
     }
     original_raw_status = dict(empty_raw_status)
     raw_file_status = dict(empty_raw_status)
-    if args.stage in {"interpolate", "all"} and not args.force:
+    if args.stage in {"interpolate", "all"} and not args.overwrite:
         ts_path = time_series_output_path(args, city)
         if ts_path.exists() and not bool(args.prefer_separate_timeseries):
             load_started = time.perf_counter()
@@ -1191,14 +1173,11 @@ def process_city(args: argparse.Namespace, city: str, index_path: Path) -> dict[
             flush=True,
         )
         ts_config = {
-            "record_index": str(index_path),
+            "record_index": index_path.name,
             "original_source": original_source,
-            "original_timeseries_dir": str(args.original_timeseries_dir),
-            "original_raw_sentinel_dir": str(args.original_raw_sentinel_dir),
-            "additional_raw_sentinel_dir": str(args.additional_raw_sentinel_dir),
-            "original_files": [str(path) for path in original_paths],
-            "complete_original_raw_files": [str(path) for path in complete_original_raw_paths],
-            "complete_additional_files": [str(path) for path in complete_additional_paths],
+            "original_files": [path.name for path in original_paths],
+            "complete_original_raw_files": [path.name for path in complete_original_raw_paths],
+            "complete_additional_files": [path.name for path in complete_additional_paths],
             "original_raw_file_completeness": original_raw_status,
             "raw_file_completeness": raw_file_status,
             "gap_threshold_days": int(args.gap_threshold_days),
@@ -1286,18 +1265,13 @@ def process_city(args: argparse.Namespace, city: str, index_path: Path) -> dict[
         }
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
-        "record_index": str(index_path),
-        "original_timeseries_dir": str(args.original_timeseries_dir),
-        "supplemental_timeseries_dir": str(args.supplemental_timeseries_dir),
-        "original_raw_sentinel_dir": str(args.original_raw_sentinel_dir),
-        "additional_raw_sentinel_dir": str(args.additional_raw_sentinel_dir),
-        "original_files": [str(path) for path in original_paths],
-        "supplemental_timeseries_files": [str(path) for path in additional_paths],
-        "original_raw_files": [str(path) for path in original_raw_paths],
-        "complete_original_raw_files": [str(path) for path in complete_original_raw_paths],
-        "additional_files": [str(path) for path in additional_paths],
-        "complete_additional_files": [str(path) for path in complete_additional_paths],
-        "missing_raw_cell_root": str(args.missing_raw_cell_root),
+        "record_index": index_path.name,
+        "original_files": [path.name for path in original_paths],
+        "supplemental_timeseries_files": [path.name for path in additional_paths],
+        "original_raw_files": [path.name for path in original_raw_paths],
+        "complete_original_raw_files": [path.name for path in complete_original_raw_paths],
+        "additional_files": [path.name for path in additional_paths],
+        "complete_additional_files": [path.name for path in complete_additional_paths],
         "raw_export_start_date": str(args.raw_export_start_date),
         "raw_export_end_date": str(args.raw_export_end_date),
         "raw_export_interval_days": int(args.raw_export_interval_days),

@@ -1,0 +1,14 @@
+name: treeid-sentinel2
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy=2.4
+  - pandas=3.0
+  - geopandas=1.1
+  - pyogrio=0.13
+  - pyproj=3.7
+  - python-dotenv=1.2
+  - pip
+  - pip:
+      - earthengine-api==1.7.36

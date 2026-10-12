@@ -43,6 +43,13 @@
 !/dataCollectionPreprocessing/PRISM/provenance/
 !/dataCollectionPreprocessing/PRISM/provenance/**
 
+/dataCollectionPreprocessing/Sentinel2/*.csv
+/dataCollectionPreprocessing/Sentinel2/*.json
+/dataCollectionPreprocessing/Sentinel2/**/*.csv
+/dataCollectionPreprocessing/Sentinel2/**/*.json
+!/dataCollectionPreprocessing/Sentinel2/provenance/
+!/dataCollectionPreprocessing/Sentinel2/provenance/**
+
 # ignore generated figures and model outputs
 /figure_scripts/
 /outputs/

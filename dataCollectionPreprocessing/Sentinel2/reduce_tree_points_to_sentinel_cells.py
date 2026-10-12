@@ -4,19 +4,8 @@ The input may be a point shapefile, a longitude/latitude CSV, or a directory
 containing spatial input files. Coordinates are transformed to a projected
 meter-based CRS and snapped to a 10 m grid with a default origin of (0, 0).
 
-Examples:
-    python dataCollectionPreprocessing/Sentinel2/reduce_tree_points_to_sentinel_cells.py ^
-        H:/NAIP/ANA/tree_predictions/tree_10m_from_cell.shp ^
-        --target-crs EPSG:32617
-
-    python dataCollectionPreprocessing/Sentinel2/reduce_tree_points_to_sentinel_cells.py ^
-        C:/path/to/Albuquerque_Final_2022-06-18.csv ^
-        --target-crs EPSG:32613
-
-    python dataCollectionPreprocessing/Sentinel2/reduce_tree_points_to_sentinel_cells.py ^
-        H:/NAIP/ANA/tree_predictions/partitioned_1km/tree_10m_from_cell ^
-        --output-dir H:/NAIP/ANA/tree_predictions/sentinel_10m_cells ^
-        --target-crs EPSG:32617
+Pass all input and output locations explicitly. Portable examples are provided
+in the folder README.
 
 Required packages:
     pip install geopandas pyogrio pandas numpy
