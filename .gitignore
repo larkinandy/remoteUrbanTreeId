@@ -13,6 +13,9 @@
 # ignore dot-prefixed directories at any depth
 .*/
 
+# local archive of superseded development and diagnostic scripts
+/.private_archive/
+
 # ignore local/generated data collection files
 /dataCollection/**
 

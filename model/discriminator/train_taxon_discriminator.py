@@ -27,9 +27,9 @@ import numpy as np
 import pandas as pd
 
 
-HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
+MODEL_DIR = Path(__file__).resolve().parents[1]
+if str(MODEL_DIR) not in sys.path:
+    sys.path.insert(0, str(MODEL_DIR))
 
 from model_components import PhenologyEncoder
 import model_components as train_base
@@ -73,6 +73,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--test-fraction", type=float, default=0.15)
     parser.add_argument("--max-val-samples", type=int, default=150_000)
     parser.add_argument("--max-test-samples", type=int, default=150_000)
+    parser.add_argument(
+        "--split-manifest-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Directory containing discriminator_train_manifest.csv.gz, "
+            "discriminator_val_manifest.csv.gz, and discriminator_test_manifest.csv.gz. "
+            "When supplied, reuse those exact record partitions."
+        ),
+    )
     parser.add_argument("--reassign-capped-eval-to-train", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--exclude-qa-from-model", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--use-qa-sample-weights", action=argparse.BooleanOptionalAction, default=True)
@@ -120,6 +130,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--class-weighting", choices=("none", "sqrt_inverse", "inverse"), default="sqrt_inverse")
     parser.add_argument("--class-weight-max", type=float, default=3.0)
     parser.add_argument("--image-center-crop-pixels", type=int, default=32)
+    parser.add_argument("--naip-encoder-normalization", choices=("batch", "group"), default="batch")
+    parser.add_argument("--chm-encoder-normalization", choices=("batch", "group"), default="batch")
+    parser.add_argument(
+        "--use-naip-chm-interaction-branch",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument("--interaction-encoder-normalization", choices=("batch", "group"), default="batch")
     parser.add_argument(
         "--independent-chm-full-extent",
         action=argparse.BooleanOptionalAction,
@@ -148,6 +166,8 @@ def parse_args() -> argparse.Namespace:
             "--interaction-naip-full-extent is enabled."
         ),
     )
+    parser.add_argument("--interaction-naip-patch-pixels", type=int, default=5)
+    parser.add_argument("--interaction-chm-patch-pixels", type=int, default=3)
     parser.add_argument("--image-augmentation", action="store_true")
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--early-stopping-patience", type=int, default=12)
@@ -155,6 +175,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--export-embeddings", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--export-validation-embeddings", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--evaluate-test", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--initialize-from-checkpoint", type=Path, default=None)
+    parser.add_argument(
+        "--use-initialize-checkpoint-standardizers",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Use preprocessing means and standard deviations saved in --initialize-from-checkpoint. "
+            "Required for exact inference-only reproduction of a trained model."
+        ),
+    )
+    parser.add_argument("--initialize-naip-from-checkpoint", type=Path, default=None)
+    parser.add_argument("--initialize-chm-from-checkpoint", type=Path, default=None)
+    parser.add_argument("--initialize-interaction-from-checkpoint", type=Path, default=None)
+    parser.add_argument(
+        "--reinitialize-gate-on-initialize",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -696,6 +736,77 @@ class CleanTreeDataset(train_base.Dataset):
         return self._build_item(index)
 
 
+class LearnedCommonGridInteractionEncoder(train_base.nn.Module):
+    """Fuse native-resolution NAIP and CHM on a learned common spatial grid."""
+
+    def __init__(
+        self,
+        hidden_dim: int,
+        dropout: float,
+        naip_patch_pixels: int = 5,
+        chm_patch_pixels: int = 3,
+        normalization: str = "batch",
+    ):
+        super().__init__()
+        if naip_patch_pixels <= 0 or chm_patch_pixels <= 0:
+            raise ValueError("Interaction patch dimensions must be positive.")
+        self.naip_patch_pixels = int(naip_patch_pixels)
+        self.chm_patch_pixels = int(chm_patch_pixels)
+        branch_dim = 32
+
+        def norm(channels: int):
+            if normalization == "batch":
+                return train_base.nn.BatchNorm2d(channels)
+            if normalization == "group":
+                groups = min(8, channels)
+                while channels % groups:
+                    groups -= 1
+                return train_base.nn.GroupNorm(groups, channels)
+            raise ValueError(f"Unknown interaction normalization: {normalization!r}")
+
+        self.naip_to_common_grid = train_base.nn.Sequential(
+            train_base.nn.Conv2d(5, branch_dim, kernel_size=self.naip_patch_pixels, stride=self.naip_patch_pixels),
+            norm(branch_dim),
+            train_base.nn.GELU(),
+        )
+        self.chm_to_common_grid = train_base.nn.Sequential(
+            train_base.nn.Conv2d(3, branch_dim, kernel_size=self.chm_patch_pixels, stride=self.chm_patch_pixels),
+            norm(branch_dim),
+            train_base.nn.GELU(),
+        )
+        self.spatial_interaction = train_base.nn.Sequential(
+            train_base.nn.Conv2d(branch_dim * 2, 64, 3, padding=1),
+            norm(64),
+            train_base.nn.GELU(),
+            train_base.nn.Conv2d(64, hidden_dim, 3, padding=1),
+            norm(hidden_dim),
+            train_base.nn.GELU(),
+            train_base.nn.AdaptiveAvgPool2d(1),
+            train_base.nn.Flatten(),
+            train_base.nn.Dropout(dropout),
+        )
+
+    def forward(self, naip: train_base.torch.Tensor, chm: train_base.torch.Tensor) -> train_base.torch.Tensor:
+        if naip.shape[-2] % self.naip_patch_pixels or naip.shape[-1] % self.naip_patch_pixels:
+            raise ValueError(
+                f"NAIP interaction shape {tuple(naip.shape[-2:])} is not divisible by "
+                f"{self.naip_patch_pixels}."
+            )
+        if chm.shape[-2] % self.chm_patch_pixels or chm.shape[-1] % self.chm_patch_pixels:
+            raise ValueError(
+                f"CHM interaction shape {tuple(chm.shape[-2:])} is not divisible by "
+                f"{self.chm_patch_pixels}."
+            )
+        naip_features = self.naip_to_common_grid(naip)
+        chm_features = self.chm_to_common_grid(chm)
+        if naip_features.shape[-2:] != chm_features.shape[-2:]:
+            raise ValueError(
+                "Learned interaction grids do not align: "
+                f"NAIP={tuple(naip_features.shape[-2:])}, CHM={tuple(chm_features.shape[-2:])}."
+            )
+        return self.spatial_interaction(train_base.torch.cat([naip_features, chm_features], dim=1))
+
+
 class CleanTreeDiscriminator(train_base.nn.Module):
     def __init__(
         self,
@@ -709,11 +820,21 @@ class CleanTreeDiscriminator(train_base.nn.Module):
         satellite_embedding_dim: int = 0,
         prism_normals_dim: int = 0,
         tree_image_branch_dropout: float = 0.0,
+        naip_encoder_normalization: str = "batch",
+        chm_encoder_normalization: str = "batch",
+        use_naip_chm_interaction_branch: bool = False,
+        interaction_encoder_normalization: str = "batch",
+        interaction_naip_patch_pixels: int = 5,
+        interaction_chm_patch_pixels: int = 3,
+        independent_naip_crop_pixels: int = 0,
     ):
         super().__init__()
         self.tree_image_branch_dropout = float(tree_image_branch_dropout)
         self.tree_image_modality_index = 0
+        self.independent_naip_crop_pixels = max(0, int(independent_naip_crop_pixels))
         self.modality_names = ("tree_centered_naip", "tree_centered_chm", "tree_centered_structure")
+        if use_naip_chm_interaction_branch:
+            self.modality_names += ("naip_chm_interaction",)
         if phenology_dim > 0:
             self.modality_names += ("sentinel_phenology",)
         if raw_sentinel_dim > 0:
@@ -722,9 +843,24 @@ class CleanTreeDiscriminator(train_base.nn.Module):
             self.modality_names += ("satellite_embedding",)
         if prism_normals_dim > 0:
             self.modality_names += ("prism_normals",)
-        self.image_encoder = train_base.ImageEncoder(5, hidden_dim, dropout)
-        self.chm_encoder = train_base.ImageEncoder(3, hidden_dim, dropout)
+        self.image_encoder = train_base.ImageEncoder(
+            5, hidden_dim, dropout, normalization=naip_encoder_normalization
+        )
+        self.chm_encoder = train_base.ImageEncoder(
+            3, hidden_dim, dropout, normalization=chm_encoder_normalization
+        )
         self.structure_encoder = PhenologyEncoder(structure_dim, hidden_dim, dropout)
+        self.interaction_encoder = (
+            LearnedCommonGridInteractionEncoder(
+                hidden_dim=hidden_dim,
+                dropout=dropout,
+                naip_patch_pixels=interaction_naip_patch_pixels,
+                chm_patch_pixels=interaction_chm_patch_pixels,
+                normalization=interaction_encoder_normalization,
+            )
+            if use_naip_chm_interaction_branch
+            else None
+        )
         self.phenology_encoder = PhenologyEncoder(phenology_dim, hidden_dim, dropout) if phenology_dim > 0 else None
         self.raw_sentinel_encoder = train_base.MaskedSequenceEncoder(raw_sentinel_dim, hidden_dim, dropout) if raw_sentinel_dim > 0 else None
         self.satellite_embedding_encoder = PhenologyEncoder(satellite_embedding_dim, hidden_dim, dropout) if satellite_embedding_dim > 0 else None
@@ -747,11 +883,25 @@ class CleanTreeDiscriminator(train_base.nn.Module):
         self.classifier = train_base.nn.Linear(embedding_dim, class_count)
 
     def encode(self, batch: dict[str, train_base.torch.Tensor]):
+        tree_image = batch["tree_image"]
+        independent_tree_image = tree_image
+        if (
+            self.independent_naip_crop_pixels > 0
+            and self.independent_naip_crop_pixels < min(tree_image.shape[-2:])
+        ):
+            crop = self.independent_naip_crop_pixels
+            y0 = (tree_image.shape[-2] - crop) // 2
+            x0 = (tree_image.shape[-1] - crop) // 2
+            independent_tree_image = tree_image[:, :, y0 : y0 + crop, x0 : x0 + crop]
         features = [
-            self.image_encoder(batch["tree_image"]),
+            self.image_encoder(independent_tree_image),
             self.chm_encoder(batch["tree_chm_image"]),
             self.structure_encoder(batch["tree_centered_structure"]),
         ]
+        if self.interaction_encoder is not None:
+            features.append(
+                self.interaction_encoder(tree_image, batch["tree_chm_interaction_image"])
+            )
         if self.phenology_encoder is not None:
             features.append(self.phenology_encoder(batch["sentinel_phenology"]))
         if self.raw_sentinel_encoder is not None:
@@ -935,7 +1085,7 @@ def evaluate(model, loader, device, class_count: int, collect: bool = False):
     y_true, y_pred = [], []
     gate_sum = None
     gate_n = 0
-    zs, cities, tree_ids, crop_indices = [], [], [], []
+    zs, probabilities, sample_gates, cities, tree_ids, crop_indices = [], [], [], [], [], []
     for batch in loader:
         city_token = batch.pop("city_token")
         batch = {key: value.to(device, non_blocking=True) if hasattr(value, "to") else value for key, value in batch.items()}
@@ -948,6 +1098,8 @@ def evaluate(model, loader, device, class_count: int, collect: bool = False):
         gate_n += gate_values.shape[0]
         if collect:
             zs.append(z.detach().cpu().numpy())
+            probabilities.append(train_base.torch.softmax(logits, dim=1).detach().cpu().numpy())
+            sample_gates.append(gate_values)
             cities.extend(list(city_token))
             tree_ids.append(batch["tree_centered_index"].detach().cpu().numpy())
             crop_indices.append(batch["crop_index"].detach().cpu().numpy())
@@ -959,6 +1111,12 @@ def evaluate(model, loader, device, class_count: int, collect: bool = False):
             metrics[f"gate_{name}"] = float(value)
     if collect:
         metrics["embeddings"] = np.concatenate(zs) if zs else np.empty((0, 0), dtype=np.float32)
+        metrics["probabilities"] = (
+            np.concatenate(probabilities) if probabilities else np.empty((0, class_count), dtype=np.float32)
+        )
+        metrics["sample_gates"] = (
+            np.concatenate(sample_gates) if sample_gates else np.empty((0, len(model.modality_names)), dtype=np.float32)
+        )
         metrics["labels"] = true
         metrics["predictions"] = pred
         metrics["city_token"] = np.asarray(cities, dtype="U64")
@@ -1033,8 +1191,34 @@ def main() -> int:
         f"median={np.median(weights):.3f}; p95={np.quantile(weights, 0.95):.3f}; max={weights.max():.3f}",
         flush=True,
     )
-    manifest = split_manifest(manifest, args)
-    manifest = cap_eval_splits(manifest, args)
+    if args.split_manifest_dir is not None:
+        split_paths = [
+            args.split_manifest_dir / f"discriminator_{split}_manifest.csv.gz"
+            for split in ("train", "val", "test")
+        ]
+        missing_paths = [str(path) for path in split_paths if not path.exists()]
+        if missing_paths:
+            raise FileNotFoundError("Missing discriminator split manifest(s): " + ", ".join(missing_paths))
+        split_frame = pd.concat(
+            [pd.read_csv(path, usecols=["record_key", "split"]) for path in split_paths],
+            ignore_index=True,
+        )
+        if split_frame["record_key"].duplicated().any():
+            raise RuntimeError("Saved discriminator split manifests contain duplicate record_key values.")
+        tree_id = pd.to_numeric(manifest["tree_id"], errors="raise").astype("int64").astype(str)
+        crop_index = pd.to_numeric(manifest["crop_index"], errors="raise").astype("int64").astype(str)
+        manifest["record_key"] = manifest["city_token"].astype(str) + "|" + tree_id + "|" + crop_index
+        before_saved_split = len(manifest)
+        manifest = manifest.merge(split_frame, on="record_key", how="inner", validate="one_to_one")
+        print(
+            f"Reused saved discriminator partitions: {before_saved_split:,}->{len(manifest):,}; "
+            f"train={(manifest['split'] == 'train').sum():,}; val={(manifest['split'] == 'val').sum():,}; "
+            f"test={(manifest['split'] == 'test').sum():,}",
+            flush=True,
+        )
+    else:
+        manifest = split_manifest(manifest, args)
+        manifest = cap_eval_splits(manifest, args)
     train_manifest = manifest.loc[manifest["split"].eq("train")].reset_index(drop=True)
     val_manifest = manifest.loc[manifest["split"].eq("val")].reset_index(drop=True)
     test_manifest = manifest.loc[manifest["split"].eq("test")].reset_index(drop=True)
@@ -1064,6 +1248,31 @@ def main() -> int:
     if args.use_prism_normals:
         print(f"Using PRISM normals arrays from clean complete shards; standardizer samples={min(len(train_manifest), args.prism_normals_stat_samples):,}", flush=True)
         prism_mean, prism_std = estimate_array_standardizer(train_manifest, store, "prism_normals", args.prism_normals_stat_samples, args.seed + 29)
+
+    if args.use_initialize_checkpoint_standardizers:
+        if args.initialize_from_checkpoint is None:
+            raise ValueError("--use-initialize-checkpoint-standardizers requires --initialize-from-checkpoint")
+        standardizer_checkpoint = train_base.torch.load(args.initialize_from_checkpoint, map_location="cpu")
+
+        def checkpoint_array(name: str, current: np.ndarray | None) -> np.ndarray | None:
+            saved = standardizer_checkpoint.get(name)
+            if saved is None:
+                if current is not None:
+                    raise ValueError(f"Checkpoint lacks required standardizer: {name}")
+                return None
+            return np.asarray(saved.detach().cpu().numpy() if hasattr(saved, "detach") else saved, dtype=np.float32)
+
+        structure_mean = checkpoint_array("structure_mean", structure_mean)
+        structure_std = checkpoint_array("structure_std", structure_std)
+        phenology_mean = checkpoint_array("phenology_mean", phenology_mean)
+        phenology_std = checkpoint_array("phenology_std", phenology_std)
+        raw_sentinel_mean = checkpoint_array("raw_sentinel_mean", raw_sentinel_mean)
+        raw_sentinel_std = checkpoint_array("raw_sentinel_std", raw_sentinel_std)
+        satellite_embedding_mean = checkpoint_array("satellite_embedding_mean", satellite_embedding_mean)
+        satellite_embedding_std = checkpoint_array("satellite_embedding_std", satellite_embedding_std)
+        prism_mean = checkpoint_array("prism_mean", prism_mean)
+        prism_std = checkpoint_array("prism_std", prism_std)
+        print("Using standardizers saved in initialization checkpoint.", flush=True)
 
     train_ds = CleanTreeDataset(
         train_manifest,
@@ -1130,7 +1339,73 @@ def main() -> int:
         satellite_embedding_dim=0 if satellite_embedding_mean is None else int(satellite_embedding_mean.shape[0]),
         prism_normals_dim=0 if prism_mean is None else int(prism_mean.shape[0]),
         tree_image_branch_dropout=args.tree_image_branch_dropout,
+        naip_encoder_normalization=args.naip_encoder_normalization,
+        chm_encoder_normalization=args.chm_encoder_normalization,
+        use_naip_chm_interaction_branch=args.use_naip_chm_interaction_branch,
+        interaction_encoder_normalization=args.interaction_encoder_normalization,
+        interaction_naip_patch_pixels=args.interaction_naip_patch_pixels,
+        interaction_chm_patch_pixels=args.interaction_chm_patch_pixels,
+        independent_naip_crop_pixels=args.image_center_crop_pixels,
     ).to(device)
+    if args.use_naip_chm_interaction_branch:
+        print(
+            "Discriminator interaction architecture: learned_common_grid; "
+            f"NAIP crop={args.interaction_naip_crop_pixels or args.image_center_crop_pixels}px; "
+            f"NAIP patch={args.interaction_naip_patch_pixels}px; "
+            f"CHM patch={args.interaction_chm_patch_pixels}px; "
+            f"normalization={args.interaction_encoder_normalization}.",
+            flush=True,
+        )
+
+    if args.initialize_from_checkpoint is not None:
+        initialization_paths = {
+            "base": args.initialize_from_checkpoint,
+            "image_encoder": args.initialize_naip_from_checkpoint,
+            "chm_encoder": args.initialize_chm_from_checkpoint,
+            "interaction_encoder": args.initialize_interaction_from_checkpoint,
+        }
+        for label, path in initialization_paths.items():
+            if path is not None and not path.exists():
+                raise FileNotFoundError(f"{label} initialization checkpoint: {path}")
+        target_state = model.state_dict()
+        merged_state = {key: value for key, value in target_state.items()}
+
+        def merge_checkpoint(path: Path, label: str, allowed_prefix: str | None = None) -> None:
+            checkpoint = train_base.torch.load(path, map_location=device)
+            source_state = checkpoint["model_state_dict"]
+            loaded = 0
+            skipped = 0
+            branch_prefixes = ("image_encoder.", "chm_encoder.", "interaction_encoder.")
+            for key, value in source_state.items():
+                if allowed_prefix is not None and not key.startswith(allowed_prefix + "."):
+                    continue
+                if allowed_prefix is None and key.startswith(branch_prefixes):
+                    continue
+                if allowed_prefix is None and args.reinitialize_gate_on_initialize and key.startswith("gate."):
+                    continue
+                if key not in target_state or tuple(value.shape) != tuple(target_state[key].shape):
+                    skipped += 1
+                    continue
+                merged_state[key] = value.to(device=target_state[key].device, dtype=target_state[key].dtype)
+                loaded += 1
+            print(
+                f"Selective discriminator initialization from {label}: loaded={loaded}; skipped={skipped}; path={path}",
+                flush=True,
+            )
+
+        merge_checkpoint(args.initialize_from_checkpoint, "base discriminator")
+        if args.initialize_naip_from_checkpoint is not None:
+            merge_checkpoint(args.initialize_naip_from_checkpoint, "NAIP branch", "image_encoder")
+        if args.initialize_chm_from_checkpoint is not None:
+            merge_checkpoint(args.initialize_chm_from_checkpoint, "CHM branch", "chm_encoder")
+        if args.initialize_interaction_from_checkpoint is not None:
+            merge_checkpoint(
+                args.initialize_interaction_from_checkpoint,
+                "interaction branch",
+                "interaction_encoder",
+            )
+        model.load_state_dict(merged_state)
+        print("Discriminator warm-start complete; optimizer and early-stopping history start fresh.", flush=True)
     counts = np.bincount(train_manifest["label_index"].to_numpy(dtype=np.int64), minlength=len(label_to_index))
     ce_weights = train_base.torch.as_tensor(class_weights(counts, args), dtype=train_base.torch.float32, device=device)
     optimizer = train_base.torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
@@ -1187,31 +1462,58 @@ def main() -> int:
     if best_path.exists():
         checkpoint = train_base.torch.load(best_path, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
-    test_metrics = evaluate(model, test_loader, device, len(label_to_index), collect=args.export_embeddings)
+    val_export_metrics = None
+    if args.export_validation_embeddings:
+        val_export_metrics = evaluate(model, val_loader, device, len(label_to_index), collect=True)
+        np.savez_compressed(
+            run_dir / "val_embeddings.npz",
+            embeddings=val_export_metrics["embeddings"],
+            probabilities=val_export_metrics["probabilities"],
+            sample_gates=val_export_metrics["sample_gates"],
+            labels=val_export_metrics["labels"],
+            predictions=val_export_metrics["predictions"],
+            city_token=val_export_metrics["city_token"],
+            tree_id=val_export_metrics["tree_id"],
+            crop_index=val_export_metrics["crop_index"],
+            label_columns=np.asarray(
+                [label for label, _idx in sorted(label_to_index.items(), key=lambda kv: kv[1])],
+                dtype=object,
+            ),
+            modality_names=np.asarray(model.modality_names, dtype=object),
+        )
+        print(f"Saved validation embeddings: {run_dir / 'val_embeddings.npz'}", flush=True)
+
+    test_metrics = None
+    if args.evaluate_test:
+        test_metrics = evaluate(model, test_loader, device, len(label_to_index), collect=args.export_embeddings)
     summary = {
         "best_epoch": best_epoch,
         "best_val_macro_f1": best_macro,
-        "test_accuracy": test_metrics["accuracy"],
-        "test_macro_f1": test_metrics["macro_f1"],
-        "test_weighted_f1": test_metrics["weighted_f1"],
+        "test_evaluation_performed": bool(args.evaluate_test),
+        "test_accuracy": None if test_metrics is None else test_metrics["accuracy"],
+        "test_macro_f1": None if test_metrics is None else test_metrics["macro_f1"],
+        "test_weighted_f1": None if test_metrics is None else test_metrics["weighted_f1"],
         "label_to_index": label_to_index,
         "args": safe_json_args(args),
     }
     (run_dir / "run_config.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    if args.export_embeddings:
+    if args.export_embeddings and test_metrics is not None:
         np.savez_compressed(
             run_dir / "test_embeddings.npz",
             embeddings=test_metrics["embeddings"],
+            probabilities=test_metrics["probabilities"],
+            sample_gates=test_metrics["sample_gates"],
             labels=test_metrics["labels"],
             predictions=test_metrics["predictions"],
             city_token=test_metrics["city_token"],
             tree_id=test_metrics["tree_id"],
             crop_index=test_metrics["crop_index"],
             label_columns=np.asarray([label for label, _idx in sorted(label_to_index.items(), key=lambda kv: kv[1])], dtype=object),
+            modality_names=np.asarray(model.modality_names, dtype=object),
         )
     print(
-        f"Finished clean discriminator: best_epoch={best_epoch}; test_acc={test_metrics['accuracy']:.3f}; "
-        f"test_macro_f1={test_metrics['macro_f1']:.3f}; test_weighted_f1={test_metrics['weighted_f1']:.3f}",
+        f"Finished clean discriminator: best_epoch={best_epoch}; best_val_macro_f1={best_macro:.3f}; "
+        f"test_evaluation_performed={bool(args.evaluate_test)}",
         flush=True,
     )
     return 0

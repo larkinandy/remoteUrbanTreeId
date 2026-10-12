@@ -1,23 +1,41 @@
-name: remote-urban-tree-id
+name: treeid-gpu
 channels:
-  - pytorch
   - conda-forge
   - defaults
 dependencies:
-  - python=3.10
-  - pip
-  - numpy
-  - pandas
-  - matplotlib
-  - seaborn
-  - pyarrow
-  - requests
-  - duckdb
-  - pystac-client
-  - scikit-learn
-  - pytorch
-  - torchvision
-  - torchaudio
-  - cpuonly
-  - earthengine-api
-  - python-dotenv
+  # Versions recorded from the study workstation's treeid-gpu environment.
+  - python=3.11.15
+  - pip=26.1.2
+  - numpy=2.4.6
+  - pandas=3.0.3
+  - h5py=3.16.0
+  - h5netcdf=1.8.1
+  - netcdf4=1.7.4
+  - xarray=2026.4.0
+  - pip:
+      # CUDA 12.8 wheels used for all reported neural-network experiments.
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - torch==2.11.0+cu128
+      - torchvision==0.26.0+cu128
+      - torchaudio==2.11.0+cu128
+      - numpy==2.4.4
+      - scipy==1.17.1
+      - scikit-learn==1.9.0
+      - matplotlib==3.11.1
+      - pandas==3.0.3
+      - pyarrow==24.0.0
+      - pillow==12.2.0
+      - tqdm==4.68.3
+      - earthengine-api==1.7.36
+      - geopandas==1.1.4
+      - pyogrio==0.13.0
+      - pyproj==3.7.2
+      - rasterio==1.4.4
+      - python-dotenv==1.2.2
+      - torchgeo==0.8.1
+      - torchmetrics==1.9.0
+      - huggingface-hub==1.24.0
+
+# A CUDA 12.8-compatible NVIDIA driver is required for GPU training. ArcPy,
+# used by parts of the NAIP preprocessing workflow, must be supplied separately
+# through an ArcGIS Pro Python environment and is not installed by this file.

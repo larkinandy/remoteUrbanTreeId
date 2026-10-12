@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Evaluate no-retrain pruning ablations for clean k=6 classifiers.
+"""Shared evaluation runtime for fixed-partition classifier checkpoints.
 
-This script loads a trained clean k=6 classifier checkpoint, recreates its
+This module loads a trained fixed-partition checkpoint, recreates its
 held-out split, and re-runs inference while zeroing selected modalities or
 feature groups after standardization. Zero after standardization means
 "replace with the training mean" for vector/sequence features.
@@ -23,11 +23,13 @@ import pandas as pd
 
 
 HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
+DISCRIMINATOR_DIR = HERE.parent / "discriminator"
+for module_dir in (HERE, DISCRIMINATOR_DIR):
+    if str(module_dir) not in sys.path:
+        sys.path.insert(0, str(module_dir))
 
-import train_clean_tree_id_centered_k6_classifier as k6
-import train_clean_tree_id_centered_taxon_discriminator as clean_disc
+import train_fixed_partition_classifier as k6
+import train_taxon_discriminator as clean_disc
 
 
 CLEAN_ROOT = Path(r"H:\TreeCenteredModelInputs")
@@ -119,22 +121,53 @@ def runtime_args(args: argparse.Namespace, checkpoint: dict[str, Any]) -> argpar
 
 
 def load_partition_for_args(args: argparse.Namespace) -> tuple[dict[str, int], list[str]]:
-    path = args.genus_k6_partition if args.grouping_scheme == "genus_k6" else args.species_k6_partition
-    return k6.load_partition(path)
+    if args.grouping_scheme == "species_partition":
+        path = args.species_partition
+    else:
+        path = args.genus_k6_partition if args.grouping_scheme == "genus_k6" else args.species_k6_partition
+    return k6.load_partition(Path(path))
 
 
 def build_manifest(args: argparse.Namespace, run_args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Path], list[str]]:
     k6.ensure_shard_pattern(run_args)
-    label_to_group, group_names = load_partition_for_args(args)
+    # The checkpoint configuration is authoritative. This permits evaluation of
+    # arbitrary fixed-k species partitions rather than silently reverting to
+    # the evaluator's legacy k=6 CLI defaults.
+    label_to_group, group_names = load_partition_for_args(run_args)
     manifest, paths = clean_disc.discover_shards(run_args)
     manifest["fine_label"] = clean_disc.scientific_label_from_name(manifest["scientific_name"], "scientific_binomial_or_genus")
     before = len(manifest)
     manifest = manifest.loc[manifest["fine_label"].isin(label_to_group)].copy()
-    print(f"Dropped records not represented in {args.grouping_scheme} partition: {before:,}->{len(manifest):,}", flush=True)
+    print(f"Dropped records not represented in {run_args.grouping_scheme} partition: {before:,}->{len(manifest):,}", flush=True)
     manifest["label_index"] = manifest["fine_label"].map(label_to_group).astype(np.int64)
     manifest["sample_weight"] = clean_disc.compute_sample_weights(manifest, run_args)
-    manifest = clean_disc.split_manifest(manifest, run_args)
-    manifest = clean_disc.cap_eval_splits(manifest, run_args)
+    split_manifest = getattr(run_args, "split_manifest", None)
+    if split_manifest is not None:
+        if bool(getattr(run_args, "exclude_qa_from_model", False)) and "qa_exclude_from_model" in manifest.columns:
+            qa_excluded = clean_disc.bool_series(manifest["qa_exclude_from_model"])
+            removed = int(qa_excluded.sum())
+            manifest = manifest.loc[~qa_excluded].copy()
+            print(f"Dropped QA-excluded records before inherited splits: {removed:,}", flush=True)
+        split_frame = pd.read_csv(split_manifest, usecols=["record_key", "split"])
+        if split_frame["record_key"].duplicated().any():
+            raise SystemExit(f"Duplicate record_key values in inherited split manifest {split_manifest}")
+        tree_id = pd.to_numeric(manifest["tree_id"], errors="raise").astype("int64").astype(str)
+        crop_index = pd.to_numeric(manifest["crop_index"], errors="raise").astype("int64").astype(str)
+        manifest["record_key"] = manifest["city_token"].astype(str) + "|" + tree_id + "|" + crop_index
+        manifest = manifest.merge(split_frame, on="record_key", how="left", validate="one_to_one")
+        missing_split = int(manifest["split"].isna().sum())
+        if missing_split:
+            raise SystemExit(
+                f"Inherited split manifest is missing {missing_split:,} mapped model records; "
+                "refusing to create implicit assignments."
+            )
+        invalid = sorted(set(manifest["split"].astype(str)).difference({"train", "val", "test"}))
+        if invalid:
+            raise SystemExit(f"Invalid inherited split values: {invalid}")
+        print(f"Using inherited split assignments from {split_manifest}", flush=True)
+    else:
+        manifest = clean_disc.split_manifest(manifest, run_args)
+        manifest = clean_disc.cap_eval_splits(manifest, run_args)
     return manifest.reset_index(drop=True), paths, group_names
 
 
@@ -334,7 +367,7 @@ def main() -> int:
         run_args,
     )
     loader = make_loader(ds, args)
-    model = k6.CleanK6Classifier(
+    model = k6.FixedPartitionClassifier(
         class_count=len(group_names),
         structure_dim=int(as_numpy(checkpoint["structure_mean"]).shape[0]),
         hidden_dim=int(getattr(run_args, "hidden_dim", 128)),
@@ -351,6 +384,7 @@ def main() -> int:
         interaction_naip_patch_pixels=int(getattr(run_args, "interaction_naip_patch_pixels", 5)),
         interaction_chm_patch_pixels=int(getattr(run_args, "interaction_chm_patch_pixels", 3)),
         phenology_zero_indices=list(getattr(run_args, "phenology_zero_indices", [])),
+        excluded_modalities=list(getattr(run_args, "exclude_modality", [])),
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
 
