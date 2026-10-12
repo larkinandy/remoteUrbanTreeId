@@ -1,34 +1,26 @@
 #!/usr/bin/env python3
-"""Launch publication-quality k=11 modality experiments.
+"""Run validation-only pilot modality experiments for the frozen k=11 model.
 
 Each experiment retrains from scratch with the frozen k=11 partition and
 inherited stage-two splits. Use repeated ``--modality`` arguments to distribute
-different jobs across workstations. Test inference is disabled.
+different jobs across workstations. Checkpoint selection and reporting here are
+validation-only; independent-test inference is handled by a separate script.
 """
 
 from __future__ import annotations
 
 import argparse
 import subprocess
-import sys
 from pathlib import Path
 
-from workflow import validate_split_manifest
+from experiment_commands import TRAINER, training_command
+from workflow import experiment_config, training_complete, validate_split_manifest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-TRAINER = ROOT / "model" / "stage2" / "train_fixed_partition_classifier.py"
 DEFAULT_PARTITION = ROOT / "config" / "final_k11_partition.npz"
-
-MODALITIES = (
-    "tree_centered_naip",
-    "tree_centered_chm",
-    "tree_centered_structure",
-    "naip_chm_interaction",
-    "sentinel_phenology",
-    "raw_sentinel",
-    "satellite_embedding",
-)
+CONFIG = experiment_config()
+MODALITIES = tuple(CONFIG["modalities"])
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,12 +36,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--species-partition", type=Path, default=DEFAULT_PARTITION)
     parser.add_argument("--split-manifest", type=Path, required=True)
     parser.add_argument("--run-suffix", default="v1")
+    parser.add_argument("--epochs", type=int, default=CONFIG["training"]["epochs"])
+    parser.add_argument("--early-stopping-patience", type=int, default=CONFIG["training"]["early_stopping_patience"])
+    parser.add_argument("--batch-size", type=int, default=CONFIG["training"]["batch_size"])
+    parser.add_argument("--num-workers", type=int, default=3)
+    parser.add_argument("--prefetch-factor", type=int, default=3)
+    parser.add_argument("--max-shard-cache", type=int, default=10)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument(
-        "--skip-existing", action=argparse.BooleanOptionalAction, default=True,
-        help="Skip a run when its output directory already contains history.csv.",
-    )
+    parser.add_argument("--overwrite", action="store_true", help="Replace an existing run, including complete outputs.")
     return parser.parse_args()
 
 
@@ -66,80 +61,7 @@ def run_name(experiment: str, modality: str, suffix: str) -> str:
 
 def command(args: argparse.Namespace, modality: str) -> tuple[str, list[str]]:
     name = run_name(args.experiment, modality, args.run_suffix)
-    cmd = [
-        sys.executable,
-        str(TRAINER),
-        "--complete-shard-root", str(args.complete_shard_root),
-        "--complete-shard-pattern", "*_part*_tree_centered_complete_inputs.npz",
-        "--prepared-mmap-root", str(args.prepared_mmap_root),
-        "--output-dir", str(args.output_dir),
-        "--run-name", name,
-        "--grouping-scheme", "species_partition",
-        "--species-partition", str(args.species_partition),
-        "--split-manifest", str(args.split_manifest),
-        "--seed", "13",
-        "--reassign-capped-eval-to-train",
-        "--exclude-qa-from-model",
-        "--no-exclude-qa-warning-from-model",
-        "--use-qa-sample-weights",
-        "--low-center-vegetation-weight", "0.25",
-        "--low-vegetated-height-with-lidar-weight", "0.50",
-        "--insufficient-lidar-coverage-weight", "0.75",
-        "--use-distance-sample-weights",
-        "--distance-weight-sigma-m", "4.0",
-        "--min-distance-sample-weight", "0.25",
-        "--epochs", "120",
-        "--early-stopping-patience", "12",
-        "--early-stopping-min-delta", "0.0001",
-        "--checkpoint-selection-score", "blended",
-        "--blended-score-macro-weight", "0.50",
-        "--blended-score-accuracy-weight", "0.30",
-        "--blended-score-weighted-weight", "0.20",
-        "--save-top-k-checkpoints", "5",
-        "--batch-size", "1024",
-        "--num-workers", "3",
-        "--eval-num-workers", "0",
-        "--prefetch-factor", "3",
-        "--persistent-workers",
-        "--shard-local-train-batches",
-        "--shard-window-size", "8",
-        "--max-shard-cache", "10",
-        "--cache-val-in-memory",
-        "--no-cache-test-in-memory",
-        "--image-center-crop-pixels", "28",
-        "--image-encoder-normalization", "group",
-        "--naip-encoder-normalization", "group",
-        "--chm-encoder-normalization", "group",
-        "--interaction-encoder-normalization", "group",
-        "--independent-chm-full-extent",
-        "--no-interaction-naip-full-extent",
-        "--interaction-naip-crop-pixels", "30",
-        "--interaction-fusion-mode", "learned_common_grid",
-        "--interaction-naip-patch-pixels", "5",
-        "--interaction-chm-patch-pixels", "3",
-        "--image-augmentation",
-        "--use-sentinel-phenology",
-        "--use-raw-sentinel",
-        "--use-satellite-embedding",
-        "--no-use-prism-normals",
-        "--use-naip-chm-interaction-branch",
-        "--phenology-stat-samples", "20000",
-        "--raw-sentinel-stat-samples", "20000",
-        "--satellite-embedding-stat-samples", "20000",
-        "--hidden-dim", "128",
-        "--dropout", "0.20",
-        "--learning-rate", "0.0005",
-        "--weight-decay", "0.0001",
-        "--grad-clip", "2.0",
-        "--class-weighting", "sqrt_inverse",
-        "--class-weight-max", "3.0",
-        "--device", args.device,
-        "--export-validation-predictions",
-        "--validation-only-pilot",
-    ]
-    for excluded in exclusions(args.experiment, modality):
-        cmd.extend(["--exclude-modality", excluded])
-    return name, cmd
+    return name, training_command(args, args.output_dir, name, exclusions(args.experiment, modality), cache_validation=True)
 
 
 def display(cmd: list[str]) -> str:
@@ -164,14 +86,12 @@ def main() -> int:
     for index, modality in enumerate(targets, 1):
         name, cmd = command(args, modality)
         run_dir = args.output_dir / name
-        if args.skip_existing and (run_dir / "history.csv").exists():
-            print(f"[{index}/{len(targets)}] Skipping existing run: {run_dir}", flush=True)
+        complete = training_complete(run_dir, CONFIG["training"]["top_k_checkpoints"])
+        if complete and not args.overwrite:
+            print(f"[{index}/{len(targets)}] Skipping verified complete run: {run_dir}", flush=True)
             continue
-        if run_dir.exists() and any(run_dir.iterdir()):
-            # A setup-only directory can remain when a job is interrupted before
-            # epoch 1. The trainer may safely overwrite those deterministic CSVs.
-            cmd.append("--force")
-            print(f"[{index}/{len(targets)}] Reusing incomplete setup directory: {run_dir}", flush=True)
+        if run_dir.exists() and any(run_dir.iterdir()) and not args.overwrite:
+            raise RuntimeError(f"Incomplete existing run requires --overwrite: {run_dir}")
         print(f"[{index}/{len(targets)}] {args.experiment}: {modality}", flush=True)
         print(display(cmd), flush=True)
         if not args.dry_run:

@@ -35,6 +35,13 @@ and only then collapsed to the six reported groups using
   on aligned prediction files.
 - `reapply_frozen_collapse.py` deterministically rebuilds collapsed outputs
   from saved k=11 probabilities; it does not rerun inference.
+- `experiment_commands.py` and `workflow.py` provide the shared command,
+  configuration, completion-validation, collapse, and metric helpers used by
+  the public runners.
+
+Public runners use `--overwrite` consistently. The shared command builder
+translates that option only at the boundary to the legacy lower-level trainer
+and evaluator interface.
 
 Leave-one-out models measure marginal contribution conditional on the other
 branches. Single-modality models measure sufficiency. Neither experiment, nor

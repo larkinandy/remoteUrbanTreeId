@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Run frozen independent-test inference for all completed k=11 single-modality models."""
+"""Evaluate frozen single-modality models on the independent test split.
+
+This is an inference-only final reporting script: it neither trains models nor
+selects checkpoints. It also exports the canonical ``collapsed_k6`` results.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from workflow import canonical_collapse_map, validate_split_manifest
+from workflow import canonical_collapse_map, inference_complete, validate_split_manifest
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -54,7 +58,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--batch-size", type=int, default=1024)
     parser.add_argument("--num-workers", type=int, default=3)
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--overwrite", action="store_true", help="Replace existing inference products.")
     return parser.parse_args()
 
 
@@ -67,8 +71,7 @@ def main() -> int:
         model_dir = args.model_root / directory_name
         checkpoint = model_dir / "best_model.pt"
         run_dir = args.output_root / modality
-        summary = run_dir / "ensemble_summary.json"
-        if summary.exists() and not args.force:
+        if inference_complete(run_dir) and not args.overwrite:
             print(f"[{index}/{len(MODELS)}] {modality}: complete; skipping", flush=True)
             continue
         command = [
@@ -88,8 +91,9 @@ def main() -> int:
             "--batch-size", str(args.batch_size),
             "--num-workers", str(args.num_workers),
             "--device", "cuda",
+            "--export-predictions",
         ]
-        if args.force:
+        if args.overwrite:
             command.append("--force")
         print(f"[{index}/{len(MODELS)}] {modality}: starting", flush=True)
         subprocess.run(command, check=True)

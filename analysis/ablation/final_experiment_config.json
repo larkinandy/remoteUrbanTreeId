@@ -3,6 +3,11 @@
   "label_space": "config/final_k11_partition.npz",
   "collapse_artifact": "config/final_k11_to_k6_collapse.npz",
   "seed": 13,
+  "paired_bootstrap": {
+    "seed": 20261009,
+    "replicates": 2000,
+    "confidence_interval": [0.025, 0.975]
+  },
   "modalities": [
     "tree_centered_naip",
     "tree_centered_chm",
@@ -35,7 +40,8 @@
     "weight_decay": 0.0001,
     "gradient_clip": 2.0,
     "class_weighting": "sqrt_inverse",
-    "class_weight_max": 3.0
+    "class_weight_max": 3.0,
+    "feature_stat_samples": 20000
   },
   "architecture": {
     "image_center_crop_pixels": 28,
@@ -54,7 +60,8 @@
     "insufficient_lidar_coverage_weight": 0.75,
     "use_distance_sample_weights": true,
     "distance_weight_sigma_m": 4.0,
-    "minimum_distance_sample_weight": 0.25
+    "minimum_distance_sample_weight": 0.25,
+    "shard_window_size": 8
   },
   "interpretation": {
     "leave_one_out": "Marginal contribution conditional on all retained branches.",

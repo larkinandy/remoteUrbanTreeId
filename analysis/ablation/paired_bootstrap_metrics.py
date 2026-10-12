@@ -1,4 +1,4 @@
-"""Paired record bootstrap for a full model and an ablation prediction file."""
+"""Final paired-bootstrap comparison of aligned independent-test predictions."""
 
 from __future__ import annotations
 
@@ -9,7 +9,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from workflow import experiment_config
+
 ROOT = Path(__file__).resolve().parents[2]
+CONFIG = experiment_config()
 
 
 def provenance_path(path: Path) -> str:
@@ -24,8 +27,8 @@ def args() -> argparse.Namespace:
     p.add_argument("--full", type=Path, required=True)
     p.add_argument("--ablation", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
-    p.add_argument("--replicates", type=int, default=2000)
-    p.add_argument("--seed", type=int, default=20261009)
+    p.add_argument("--replicates", type=int, default=CONFIG["paired_bootstrap"]["replicates"])
+    p.add_argument("--seed", type=int, default=CONFIG["paired_bootstrap"]["seed"])
     p.add_argument(
         "--collapse-map",
         default=None,
@@ -42,10 +45,15 @@ def confusion_metrics(y: np.ndarray, pred: np.ndarray, weights: np.ndarray, k: i
     denom = 2 * tp + (predicted - tp) + (support - tp)
     f1 = np.divide(2 * tp, denom, out=np.zeros_like(tp), where=denom > 0)
     accuracy = tp.sum() / cm.sum()
-    macro = f1[support > 0].mean()
-    weighted = np.sum(f1 * support) / support.sum()
-    score = .3 * accuracy + .5 * macro + .2 * weighted
-    return np.asarray([accuracy, macro, weighted, score])
+    macro_f1 = f1[support > 0].mean()
+    weighted_f1 = np.sum(f1 * support) / support.sum()
+    score_weights = CONFIG["training"]["blended_score_weights"]
+    score = (
+        score_weights["accuracy"] * accuracy
+        + score_weights["macro_f1"] * macro_f1
+        + score_weights["weighted_f1"] * weighted_f1
+    )
+    return np.asarray([accuracy, macro_f1, weighted_f1, score])
 
 
 def main() -> None:
@@ -95,7 +103,7 @@ def main() -> None:
             print(f"bootstrap {b + 1:,}/{a.replicates:,}", flush=True)
     rows = []
     for j, name in enumerate(names):
-        low, high = np.quantile(differences[:, j], [.025, .975])
+        low, high = np.quantile(differences[:, j], CONFIG["paired_bootstrap"]["confidence_interval"])
         rows.append({
             "metric": name,
             "full": observed_full[j],
