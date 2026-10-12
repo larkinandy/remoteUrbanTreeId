@@ -159,3 +159,60 @@ def validate_split_manifest(path: Path, geographic_config: Path) -> None:
         raise ValueError(
             f"Split-manifest checksum mismatch for {path}: {digest} != {expected['sha256']}"
         )
+
+
+def load_geographic_config(path: Path) -> dict[str, Any]:
+    """Load the frozen geographic experiment configuration."""
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def scientific_training_arguments(configuration: dict[str, Any]) -> list[str]:
+    """Translate frozen scientific model settings into trainer arguments."""
+    training = configuration["training"]
+    weights = training["blended_score_weights"]
+    return [
+        "--seed", str(training["seed"]),
+        "--reassign-capped-eval-to-train", "--exclude-qa-from-model",
+        "--no-exclude-qa-warning-from-model", "--use-qa-sample-weights",
+        "--low-center-vegetation-weight", str(training["low_center_vegetation_weight"]),
+        "--low-vegetated-height-with-lidar-weight", str(training["low_vegetated_height_with_lidar_weight"]),
+        "--insufficient-lidar-coverage-weight", str(training["insufficient_lidar_coverage_weight"]),
+        "--use-distance-sample-weights",
+        "--distance-weight-sigma-m", str(training["distance_weight_sigma_m"]),
+        "--min-distance-sample-weight", str(training["minimum_distance_sample_weight"]),
+        "--early-stopping-min-delta", str(training["early_stopping_min_delta"]),
+        "--checkpoint-selection-score", str(training["checkpoint_selection_score"]),
+        "--blended-score-macro-weight", str(weights["macro_f1"]),
+        "--blended-score-accuracy-weight", str(weights["accuracy"]),
+        "--blended-score-weighted-weight", str(weights["weighted_f1"]),
+        "--save-top-k-checkpoints", str(training["save_top_k_checkpoints"]),
+        "--image-center-crop-pixels", str(training["image_center_crop_pixels"]),
+        "--image-encoder-normalization", "group", "--naip-encoder-normalization", "group",
+        "--chm-encoder-normalization", "group", "--interaction-encoder-normalization", "group",
+        "--independent-chm-full-extent", "--no-interaction-naip-full-extent",
+        "--interaction-naip-crop-pixels", str(training["interaction_naip_crop_pixels"]),
+        "--interaction-fusion-mode", "learned_common_grid",
+        "--interaction-naip-patch-pixels", str(training["interaction_naip_patch_pixels"]),
+        "--interaction-chm-patch-pixels", str(training["interaction_chm_patch_pixels"]),
+        "--image-augmentation", "--use-sentinel-phenology", "--use-raw-sentinel",
+        "--use-satellite-embedding", "--no-use-prism-normals",
+        "--use-naip-chm-interaction-branch", "--exclude-modality", str(training["excluded_modality"]),
+        "--phenology-stat-samples", str(training["statistics_samples"]),
+        "--raw-sentinel-stat-samples", str(training["statistics_samples"]),
+        "--satellite-embedding-stat-samples", str(training["statistics_samples"]),
+        "--hidden-dim", str(training["hidden_dimension"]), "--dropout", str(training["dropout"]),
+        "--learning-rate", str(training["learning_rate"]), "--weight-decay", str(training["weight_decay"]),
+        "--grad-clip", str(training["gradient_clip"]), "--class-weighting", str(training["class_weighting"]),
+        "--class-weight-max", str(training["maximum_class_weight"]),
+    ]
+
+
+def update_status_manifest(path: Path, city: str, stage: str, status: str) -> None:
+    """Update a compact resumability manifest after each geographic job stage."""
+    rows: list[dict[str, str]] = []
+    if path.exists():
+        rows = pd.read_csv(path, dtype=str).to_dict("records")
+    rows = [row for row in rows if not (row["city"] == city and row["stage"] == stage)]
+    rows.append({"city": city, "stage": stage, "status": status})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).sort_values(["city", "stage"]).to_csv(path, index=False)

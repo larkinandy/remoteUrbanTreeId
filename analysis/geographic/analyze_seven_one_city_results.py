@@ -17,6 +17,7 @@ from geographic_utils import (
     metric_set,
     screen_qa,
 )
+from geographic_reporting import write_one_city_reports
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,7 +58,74 @@ def source_paths(root: Path, source: str, legacy_stlouis_root: Path | None) -> t
     return standard[0], root / "results" / f"{source}_to_22_cities_test_top5" / "ensemble_predictions.npz"
 
 
+def load_and_audit_source(
+    source: str,
+    one_city_root: Path,
+    legacy_stlouis_root: Path | None,
+    primary: pd.DataFrame,
+    target_cities: list[str],
+    qa: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Load one source model and verify exact comparability with the primary test set."""
+    within_path, cross_path = source_paths(one_city_root, source, legacy_stlouis_root)
+    for path in (within_path, cross_path):
+        if not path.exists():
+            raise FileNotFoundError(path)
+    within = load_predictions(within_path, "source")
+    cross = load_predictions(cross_path, "source")
+    cross = cross.loc[cross["city"].isin(target_cities) & cross["city"].ne(source)].copy()
+    predictions = pd.concat([within, cross], ignore_index=True)
+    expected = primary.loc[primary["city"].isin(target_cities)].copy()
+    joined = expected.merge(
+        predictions.drop(columns="city"), on="record_key", how="inner", validate="one_to_one"
+    ).merge(qa, on="record_key", validate="one_to_one")
+    audit: dict[str, object] = {
+        "source_city": source,
+        "expected_records": len(expected),
+        "prediction_records": len(predictions),
+        "joined_records": len(joined),
+        "target_city_set_exact": set(predictions.city) == set(target_cities),
+        "records_per_city_exact": expected.groupby("city").size().sort_index().equals(
+            predictions.groupby("city").size().sort_index()
+        ),
+        "k11_labels_exact": bool(np.array_equal(joined.k11_label_primary, joined.k11_label_source)),
+        "collapsed_k6_labels_exact": bool(np.array_equal(
+            joined.collapsed_k6_label_primary, joined.collapsed_k6_label_source
+        )),
+    }
+    return screen_qa(joined), audit
+
+
+def source_target_metric_rows(
+    source: str,
+    frame: pd.DataFrame,
+    minimum_group_records: int,
+) -> list[dict[str, object]]:
+    """Calculate both label spaces and regimes for every target city."""
+    rows: list[dict[str, object]] = []
+    for target, target_frame in frame.groupby("city", sort=True):
+        relation = "within_city" if target == source else "cross_city"
+        for space, class_count in (("k11", 11), ("collapsed_k6", 6)):
+            for regime in ("source", "primary"):
+                values, _, _ = metric_set(
+                    target_frame[f"{space}_label_{regime}"].to_numpy(),
+                    target_frame[f"{space}_prediction_{regime}"].to_numpy(),
+                    class_count,
+                    minimum_group_records,
+                )
+                rows.append({
+                    "source_city": source,
+                    "target_city": target,
+                    "relation": relation,
+                    "regime": "one_city" if regime == "source" else "primary",
+                    "label_space": space,
+                    **values,
+                })
+    return rows
+
+
 def main() -> int:
+    """Prepare audited long-format metrics and invoke table-only reporting."""
     arguments = parse_args()
     arguments.output_dir.mkdir(parents=True, exist_ok=True)
     configuration = json.loads(arguments.geographic_config.read_text(encoding="utf-8"))
@@ -72,50 +140,15 @@ def main() -> int:
     audits: list[dict] = []
     source_frames: dict[str, pd.DataFrame] = {}
     for source in sources:
-        within_path, cross_path = source_paths(
-            arguments.one_city_root, source, arguments.legacy_stlouis_root
+        source_frame, source_audit = load_and_audit_source(
+            source, arguments.one_city_root, arguments.legacy_stlouis_root,
+            primary, targets, qa,
         )
-        for path in (within_path, cross_path):
-            if not path.exists():
-                raise FileNotFoundError(path)
-        within = load_predictions(within_path, "source")
-        cross = load_predictions(cross_path, "source")
-        cross = cross.loc[cross["city"].isin(targets) & cross["city"].ne(source)].copy()
-        predictions = pd.concat([within, cross], ignore_index=True)
-        expected = primary.loc[primary["city"].isin(targets)].copy()
-        joined = expected.merge(predictions.drop(columns="city"), on="record_key", how="inner", validate="one_to_one")
-        joined = joined.merge(qa, on="record_key", validate="one_to_one")
-        expected_by_city = expected.groupby("city").size().sort_index()
-        actual_by_city = predictions.groupby("city").size().sort_index()
-        audits.append({
-            "source_city": source,
-            "expected_records": len(expected),
-            "prediction_records": len(predictions),
-            "joined_records": len(joined),
-            "target_city_set_exact": set(predictions.city) == set(targets),
-            "records_per_city_exact": expected_by_city.equals(actual_by_city),
-            "k11_labels_exact": bool(np.array_equal(joined.k11_label_primary, joined.k11_label_source)),
-            "collapsed_k6_labels_exact": bool(np.array_equal(
-                joined.collapsed_k6_label_primary, joined.collapsed_k6_label_source
-            )),
-        })
-        joined = screen_qa(joined)
-        source_frames[source] = joined
-        for target, frame in joined.groupby("city", sort=True):
-            relation = "within_city" if target == source else "cross_city"
-            for space, class_count in (("k11", 11), ("collapsed_k6", 6)):
-                for regime in ("source", "primary"):
-                    values, _, _ = metric_set(
-                        frame[f"{space}_label_{regime}"].to_numpy(),
-                        frame[f"{space}_prediction_{regime}"].to_numpy(),
-                        class_count,
-                        arguments.minimum_group_records,
-                    )
-                    metric_rows.append({
-                        "source_city": source, "target_city": target, "relation": relation,
-                        "regime": "one_city" if regime == "source" else "primary",
-                        "label_space": space, **values,
-                    })
+        source_frames[source] = source_frame
+        audits.append(source_audit)
+        metric_rows.extend(source_target_metric_rows(
+            source, source_frame, arguments.minimum_group_records
+        ))
 
     audit = pd.DataFrame(audits)
     checks = [
@@ -161,26 +194,7 @@ def main() -> int:
     summaries.to_csv(arguments.output_dir / "source_model_summaries.csv", index=False)
 
     collapsed_k6 = summaries.loc[summaries.label_space.eq("collapsed_k6")].copy()
-    overall = collapsed_k6.groupby("regime").agg(
-        source_models=("source_city", "nunique"),
-        mean_within_accuracy=("within_accuracy", "mean"),
-        mean_within_macro_f1=("within_macro_f1", "mean"),
-        mean_within_weighted_f1=("within_weighted_f1", "mean"),
-        mean_source_balanced_cross_accuracy=("cross_city_mean_accuracy", "mean"),
-        median_source_balanced_cross_accuracy=("cross_city_mean_accuracy", "median"),
-        mean_source_balanced_cross_macro_f1=("cross_city_mean_macro_f1", "mean"),
-        median_source_balanced_cross_macro_f1=("cross_city_mean_macro_f1", "median"),
-        mean_source_balanced_cross_weighted_f1=("cross_city_mean_weighted_f1", "mean"),
-        median_source_balanced_cross_weighted_f1=("cross_city_mean_weighted_f1", "median"),
-    ).reset_index()
-    overall.to_csv(arguments.output_dir / "overall_collapsed_k6_summary.csv", index=False)
-
-    one = collapsed_k6.loc[collapsed_k6.regime.eq("one_city")].copy()
-    prim = collapsed_k6.loc[collapsed_k6.regime.eq("primary")].copy()
-    comparison = one.merge(prim, on=["source_city", "label_space"], suffixes=("_one_city", "_primary"))
-    for metric in ("cross_city_mean_accuracy", "cross_city_mean_macro_f1", "cross_city_mean_weighted_f1"):
-        comparison[f"delta_{metric}"] = comparison[f"{metric}_one_city"] - comparison[f"{metric}_primary"]
-    comparison.to_csv(arguments.output_dir / "one_city_vs_primary_collapsed_k6.csv", index=False)
+    overall, _ = write_one_city_reports(summaries, arguments.output_dir)
 
     metadata = {
         "source_cities": list(sources),
