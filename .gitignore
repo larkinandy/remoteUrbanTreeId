@@ -36,6 +36,13 @@
 !/dataCollectionPreprocessing/NAIP/provenance/
 !/dataCollectionPreprocessing/NAIP/provenance/**
 
+/dataCollectionPreprocessing/PRISM/*.csv
+/dataCollectionPreprocessing/PRISM/*.json
+/dataCollectionPreprocessing/PRISM/**/*.csv
+/dataCollectionPreprocessing/PRISM/**/*.json
+!/dataCollectionPreprocessing/PRISM/provenance/
+!/dataCollectionPreprocessing/PRISM/provenance/**
+
 # ignore generated figures and model outputs
 /figure_scripts/
 /outputs/

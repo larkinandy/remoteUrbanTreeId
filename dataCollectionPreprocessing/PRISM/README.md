@@ -1,324 +1,157 @@
-# PRISM Climate Data Pipeline
+# PRISM Daily Climate Data Pipeline
 
-This folder contains the minimal workflow for downloading PRISM climate grids
-for the study cities and optionally deriving daily weather context aligned with
-Sentinel-2 observations.
+This folder contains the workflow used for the manuscript: download daily
+PRISM grids and construct deduplicated daily climate sidecars mapped to each
+tree's Sentinel-2 cell. Legacy rolling-weather and climate-normal feature code
+was removed because it did not generate the final model inputs.
 
-## Folder contents
+## Files
 
 | File | Purpose |
 |---|---|
-| `download_prism_sentinel_cells.py` | Plans and downloads PRISM normals, daily, monthly, or annual ZIP grids. It can optionally sample grids at study Sentinel-cell centers. |
-| `derive_prism_daily_sentinel_context.py` | Uses downloaded daily grids, monthly normals, and Sentinel observation dates to derive rolling weather-context features. |
+| `download_prism_sentinel_cells.py` | Plans, downloads, validates, and optionally samples PRISM grids. |
+| `derive_clean_tree_id_centered_prism_daily_sidecars.py` | Creates the final daily `ppt`, `tmean`, and `vpdmax` sidecars. |
+| `freeze_study_prism_provenance.py` | Freezes path-independent city, grid, and archive provenance. |
+| `environment-prism.yml` | Reproducible open-source environment. |
+| `provenance/` | Frozen final-study configuration and summaries. |
 
-## Requirements
-
-Both scripts require Python, NumPy, and pandas. Install `rasterio` when using
-`--extract-values` or deriving daily context:
-
-```powershell
-python -m pip install numpy pandas rasterio
-```
-
-The scripts reuse city-coordinate helpers from:
-
-```text
-dataCollection\LiDAR\identify_tnm_lidar_city_coverage.py
-```
-
-They expect study-cell tables beneath:
-
-```text
-dataCollection\Sentinel2\mccoy_sentinel_10m_cells_utm\<city>\
-```
-
-The download step requires internet access to the public PRISM file server.
-
-## Supported PRISM products
-
-`download_prism_sentinel_cells.py` supports:
-
-| Product | Date input | Typical use |
-|---|---|---|
-| `normal-monthly` | Months `1-12` | Thirty-year monthly climate normals |
-| `normal-annual` | No date required | Thirty-year annual climate normals |
-| `daily` | Start/end dates or explicit dates | Weather sequences and rolling context |
-| `monthly` | Start/end dates, years/months, or explicit dates | Historical monthly climate |
-| `annual` | Start/end dates, years, or explicit dates | Historical annual climate |
-
-Default variables are:
-
-```text
-ppt,tmin,tmax,tmean,vpdmin,vpdmax
-```
-
-Common variables:
-
-- `ppt`: precipitation;
-- `tmin`: minimum temperature;
-- `tmax`: maximum temperature;
-- `tmean`: mean temperature;
-- `vpdmin`: minimum vapor-pressure deficit;
-- `vpdmax`: maximum vapor-pressure deficit.
-
-The default source is the conterminous-US, 4 km, all-networks PRISM product.
-Use `--region ak` for Alaska and override resolution or URL templates only
-after confirming availability on the PRISM server.
-
-## Output layout
-
-The default output root is:
-
-```text
-E:\PRISM\sentinel_cells\
-```
-
-Downloaded archives are organized as:
-
-```text
-E:\PRISM\sentinel_cells\raw\<product>\<variable>\*.zip
-```
-
-For example:
-
-```text
-E:\PRISM\sentinel_cells\raw\daily\ppt\prism_ppt_us_25m_20200101.zip
-E:\PRISM\sentinel_cells\raw\normal-monthly\tmean\prism_tmean_us_25m_202001_avg_30y.zip
-```
-
-Each invocation also writes:
-
-- `prism_download_manifest.csv`;
-- `prism_download_manifest.json`.
-
-The manifest records product, variable, date, URL, destination, status,
-downloaded bytes, and the last error.
-
-## 1. Inspect a download plan
-
-The downloader requires either one or more `--city-token` values or
-`--all-cities`. Begin with `--dry-run`, which prints planned requests without
-writing a manifest or downloading files.
-
-Example monthly-normal plan for one city:
+## Environment
 
 ```powershell
-python dataCollection\PRISM\download_prism_sentinel_cells.py `
-  --city-token atlanta `
-  --product normal-monthly `
-  --variables ppt,tmin,tmax,tmean,vpdmin,vpdmax `
-  --months 1-12 `
-  --output-dir E:\PRISM\sentinel_cells `
-  --dry-run
+conda env create --file dataCollectionPreprocessing/PRISM/environment-prism.yml
+conda activate treeid-prism
 ```
 
-Confirm the printed URLs, variables, and number of requests before downloading.
+Downloading requires internet access. Raster sampling and sidecar creation use
+Rasterio. NumPy and pandas provide array and table processing.
 
-## 2. Download monthly climate normals
+## Final study configuration
 
-Download all 12 monthly normals for the current variables:
+The authoritative parameters are in
+`provenance/study_prism_configuration.json`. The final inputs contain daily:
+
+- precipitation (`ppt`);
+- mean temperature (`tmean`);
+- maximum vapor-pressure deficit (`vpdmax`).
+
+The interval is 2021-01-01 through 2023-12-31 (1,095 days). Data use the
+conterminous-US, approximately 4-km, all-networks PRISM daily product. The
+`25m` filename token is a PRISM grid designation; it does not mean 25 metres.
+
+PRISM values are not independent observations for every tree. Values are
+stored once for each unique PRISM grid cell, and each city file maps its trees
+and Sentinel cells to those shared sequences. During shard assembly, daily
+values are appended only to retained Sentinel-2 observation dates.
+
+## Workflow dependencies
+
+1. `dataCollectionPreprocessing/Sentinel2/reduce_tree_points_to_sentinel_cells.py`
+   creates the Sentinel-cell coverage tables used by the downloader.
+2. `dataCollectionPreprocessing/shard/build_clean_tree_record_metadata.py`
+   creates clean tree-to-Sentinel-cell linkage tables.
+3. This folder downloads PRISM and creates daily sidecars.
+4. `dataCollectionPreprocessing/shard/assemble_clean_tree_id_centered_model_input_shards.py`
+   joins PRISM values to Sentinel dates in the final model shards.
+
+Large grids and arrays are not stored in Git. Every data location must be
+provided explicitly; scripts contain no workstation storage defaults.
+
+## 1. Inspect or download daily grids
+
+Use a portable root variable for local storage:
 
 ```powershell
-python dataCollection\PRISM\download_prism_sentinel_cells.py `
+$DATA_ROOT = "path/to/urban_tree_data"
+
+python dataCollectionPreprocessing/PRISM/download_prism_sentinel_cells.py `
   --all-cities `
-  --product normal-monthly `
-  --variables ppt,tmin,tmax,tmean,vpdmin,vpdmax `
-  --months 1-12 `
-  --output-dir E:\PRISM\sentinel_cells
-```
-
-PRISM grids are national products, so selecting additional cities does not
-duplicate grid downloads. City selection controls which study cells are loaded
-and later sampled.
-
-To create only the expected manifest without downloading:
-
-```powershell
-python dataCollection\PRISM\download_prism_sentinel_cells.py `
-  --all-cities `
-  --product normal-monthly `
-  --variables ppt,tmean,vpdmax `
-  --months 1-12 `
-  --output-dir E:\PRISM\sentinel_cells `
-  --query-only
-```
-
-`--query-only` writes the CSV and JSON manifests; `--dry-run` only prints the
-plan.
-
-## 3. Download daily PRISM grids
-
-The current daily tree-centered sidecar uses `ppt`, `tmean`, and `vpdmax` by
-default. Download the full date range required by the model dataset:
-
-```powershell
-python dataCollection\PRISM\download_prism_sentinel_cells.py `
-  --all-cities `
+  --cell-map-dir "$DATA_ROOT\sentinel_cells" `
+  --output-dir "$DATA_ROOT\prism" `
   --product daily `
   --variables ppt,tmean,vpdmax `
-  --start-date 2018-01-01 `
+  --start-date 2021-01-01 `
   --end-date 2023-12-31 `
-  --output-dir E:\PRISM\sentinel_cells
-```
-
-For a short test:
-
-```powershell
-python dataCollection\PRISM\download_prism_sentinel_cells.py `
-  --city-token atlanta `
-  --product daily `
-  --variables ppt,tmean,vpdmax `
-  --start-date 2022-06-01 `
-  --end-date 2022-06-07 `
-  --output-dir E:\PRISM\sentinel_cells `
   --dry-run
 ```
 
-Alternative date selectors include:
-
-- `--dates 20220601,20220602,20220603`;
-- `--years 2020,2022-2023` for annual products;
-- `--years 2020-2022 --months 4-10` for monthly products.
-
-For daily products, `--years` alone generates annual-style date tokens rather
-than every day in those years. Use `--start-date` and `--end-date` for a
-continuous daily sequence.
-
-## 4. Resume or repair downloads
-
-The downloader validates existing files as ZIP archives. Valid files are
-marked `skipped_existing`; missing, empty, or invalid files are downloaded
+Review the planned URLs and request count, then remove `--dry-run`. Use
+`--query-only` to write a mutable download manifest without downloading.
+Existing ZIP files are checked before reuse; invalid archives are downloaded
 again.
 
-Useful options:
+The source is the PRISM Climate Group public file server at Oregon State
+University. The default URL pattern is exposed through `--url-template` so a
+future server-layout change does not require modifying the downloader.
 
-- `--retries 3`: number of attempts per file;
-- `--timeout 120`: request timeout in seconds;
-- `--sleep 0.2`: delay between attempts and requests;
-- `--chunk-mb 8`: streaming download chunk size;
-- `--overwrite`: redownload valid existing files;
-- `--no-verify-tls`: troubleshooting option for certificate problems;
-- `--exclude-city-token honolulu`: exclude an unsupported or unwanted city;
-- `--manifest-name NAME`: use a distinct manifest name for separate runs.
-
-The manifest is rewritten periodically and at completion, so rerunning the same
-command safely skips valid archives.
-
-## 5. Optionally sample PRISM values at study cells
-
-Add `--extract-values` to sample downloaded grids at each selected Sentinel-cell
-center:
+## 2. Create the final daily sidecars
 
 ```powershell
-python dataCollection\PRISM\download_prism_sentinel_cells.py `
-  --city-token atlanta `
-  --product normal-monthly `
-  --variables ppt,tmean,vpdmax `
-  --months 1-12 `
-  --output-dir E:\PRISM\sentinel_cells `
-  --extract-values
+python dataCollectionPreprocessing/PRISM/derive_clean_tree_id_centered_prism_daily_sidecars.py `
+  --raw-root "$DATA_ROOT\prism\raw\daily" `
+  --link-root "$DATA_ROOT\tree_record_metadata_clean" `
+  --output-dir "$DATA_ROOT\tree_centered_prism_daily_clean" `
+  --variable ppt `
+  --variable tmean `
+  --variable vpdmax `
+  --start-date 2021-01-01 `
+  --end-date 2023-12-31
 ```
 
-The default sampled output is:
+Use `--max-dates` for a short smoke test. Existing completed global output is
+protected unless `--force` is supplied.
 
-```text
-E:\PRISM\sentinel_cells\prism_sentinel_cell_values.csv
-```
+The output contract is:
 
-It contains city, cell identifiers, coordinates, product, variable, date,
-value, and source archive. Raster files extracted from ZIPs are deleted after
-sampling unless `--keep-extracted-rasters` is supplied.
+- `prism_daily_values.npz`
+  - `values[prism_pixel, date, variable]`, `float32`;
+  - `valid_mask` with the same shape;
+  - `dates_yyyymmdd`;
+  - `variable_names`;
+  - PRISM grid rows and columns;
+  - path-independent run configuration and raster-grid metadata.
+- `<city>/<city>_prism_daily_index.npz`
+  - `tree_id` and Sentinel cell identifiers;
+  - coordinates and PRISM grid indices;
+  - `prism_daily_source_row` into the global array;
+  - `missing_prism_daily`.
+- `prism_daily_sidecar_summary.csv`, with mapping support by city.
 
-Use a different `--cell-output-name` when sampling multiple product families
-to avoid replacing a previous CSV.
+Nodata and non-finite raster values are stored as zero in `values` and marked
+false in `valid_mask`; consumers must use the mask.
 
-## 6. Create daily weather products
+## Honolulu coverage
 
-After downloading daily grids, `derive_prism_daily_sentinel_context.py` can
-calculate weather features for dates represented in the Sentinel-2 time-series
-tables. Its default features include:
+The retained conterminous-US PRISM grid does not cover Honolulu. All 15,428
+Honolulu records have `missing_prism_daily = true`; no climate values were
+invented or extrapolated. These records must be excluded from analyses that
+require PRISM or handled through the existing missing-data QA pathway. A future
+Hawaii analysis requires a separately documented compatible climate source.
 
-- cumulative growing-degree days above 5 °C;
-- 30-day growing-degree days;
-- 30- and 90-day precipitation;
-- 30-day dry-day count;
-- 30-day mean and maximum `vpdmax`;
-- precipitation and `vpdmax` anomalies relative to monthly normals.
-
-The current model uses daily precipitation (`ppt`), mean temperature (`tmean`),
-and maximum vapor-pressure deficit (`vpdmax`). It does not use the older PRISM
-climate-normal sidecars or normal-anomaly features.
-
-Run a small dry test first:
+## Frozen provenance
 
 ```powershell
-python dataCollectionPreprocessing\PRISM\derive_prism_daily_sentinel_context.py `
-  --city-token atlanta `
-  --sentinel2-dir E:\cell\sentinel2_timeseries `
-  --prism-daily-root E:\PRISM\sentinel_cells\raw\daily `
-  --output-dir E:\PRISM\sentinel_cells\daily_context `
-  --start-date 2022-06-01 `
-  --end-date 2022-06-30 `
-  --max-cells-per-city 100 `
-  --max-target-dates 5 `
-  --dry-run
+python dataCollectionPreprocessing/PRISM/freeze_study_prism_provenance.py `
+  --sidecar-root "$DATA_ROOT\tree_centered_prism_daily_clean" `
+  --archive-root "$DATA_ROOT\prism\raw\daily" `
+  --output-dir dataCollectionPreprocessing/PRISM/provenance
 ```
 
-Then remove the debug limits and `--dry-run`:
-
-```powershell
-python dataCollectionPreprocessing\PRISM\derive_prism_daily_sentinel_context.py `
-  --all-cities `
-  --sentinel2-dir E:\cell\sentinel2_timeseries `
-  --prism-daily-root E:\PRISM\sentinel_cells\raw\daily `
-  --output-dir E:\PRISM\sentinel_cells\daily_context `
-  --variables ppt,tmean,vpdmax
-```
-
-By default, missing daily archives are errors. Use
-`--missing-daily-policy nan` to retain dates with missing values or
-`--missing-daily-policy skip-date` to omit incomplete dates.
-
-## Current tree-centered model inputs
-
-Run the current clean daily sidecar workflow with:
-
-```powershell
-dataCollectionPreprocessing\PRISM\run_clean_prism_daily_sidecars.cmd
-```
-
-This invokes
-`dataCollectionPreprocessing/PRISM/derive_clean_tree_id_centered_prism_daily_sidecars.py`
-for 2021-01-01 through 2023-12-31.
-
-The daily sidecar script reads raw daily archives directly from:
-
-```text
-E:\PRISM\sentinel_cells\raw\daily\<variable>\
-```
-
-Do not delete the raw ZIP archives after optional cell-value extraction.
-
-The resulting products are written under
-`H:\TreeCenteredModelInputs\tree_centered_prism_daily_clean`. Daily values are
-stored once per unique PRISM pixel, and city sidecars map each `tree_id` and
-Sentinel cell to the shared daily sequence.
+This creates a path-independent city summary, global-array/grid summary, and a
+SHA-256/ZIP-integrity inventory of every retained archive. The historical
+archive volume was not mounted during the current repository cleanup, so the
+tracked provenance status explicitly reports that the checksum inventory is
+pending. Rerun the command without `--allow-missing-archive-root` when that
+volume is available.
 
 ## QA checklist
 
-Before deriving sidecars or training models:
-
-1. Confirm every requested variable/date has status `downloaded` or
-   `skipped_existing` in the manifest.
-2. Investigate HTTP errors and invalid ZIP responses.
-3. Confirm daily archive filenames contain the expected `YYYYMMDD` date.
-4. Confirm the daily series covers the full model interval without unintended gaps.
-5. Sample a few grids and verify temperatures, precipitation, and VPD are in
-   plausible ranges.
-6. Confirm the selected region and resolution cover all study cities.
-7. Preserve raw ZIP archives until all sidecars and model shards are validated.
-
-If PRISM changes its public URL layout, use `--url-template` to supply a new
-template. Available placeholders include `{variable}`, `{date}`, `{year}`,
-`{month}`, `{product}`, `{region}`, `{resolution}`, `{grid_token}`,
-`{time_series_kind}`, and `{stability}`.
+1. Confirm all 3,285 expected variable-date archives are present and valid.
+2. Confirm filenames cover all 1,095 dates for each of three variables.
+3. Review checksums and ZIP integrity in the frozen archive inventory.
+4. Confirm the retained global array has 1,523 PRISM pixels, 1,095 dates, and
+   three variables.
+5. Inspect plausible ranges and units for precipitation, temperature, and VPD.
+6. Review city mapping percentages, especially any partial or zero coverage.
+7. Confirm masks are retained through shard assembly.
+8. Preserve original archives until model inputs and frozen provenance are
+   independently verified.
