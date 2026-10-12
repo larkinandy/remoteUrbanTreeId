@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Combine the manuscript k=11 and collapsed k=6 discrimination spaces."""
+"""Render aligned k11 and collapsed_k6 discrimination-space SVG panels."""
 
 from __future__ import annotations
 
@@ -21,12 +21,12 @@ from figure_config import manuscript_collapse_zero_based
 
 
 # This map is in the manuscript display order used by the input CSV, after the
-# internal k=11 identifiers have been reordered for a contiguous legend. The
+# internal k11 identifiers have been reordered for a contiguous legend. The
 # model-space collapse remains the mapping in config/final_grouping.json.
 HYBRID_MAP = manuscript_collapse_zero_based()
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -42,12 +42,13 @@ def parse_args():
     parser.add_argument(
         "--output",
         type=Path,
-        default=root / "outputs/reviewer_revision/combined_k11_k6_discrimination_space_hybrid_legend.svg",
+        default=root / "outputs/reviewer_revision/combined_k11_collapsed_k6_discrimination_space_hybrid_legend.svg",
     )
     return parser.parse_args()
 
 
-def read_rows(path: Path):
+def read_rows(path: Path) -> list[dict[str, str | int | float]]:
+    """Read and type a frozen discrimination-space table."""
     with path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     return [
@@ -63,17 +64,20 @@ def read_rows(path: Path):
     ]
 
 
-def draw_panel(svg, rows, colors, panel_x, title, panel_letter, bounds, maximum):
+def draw_panel(
+    svg: list[str], rows: list[dict], colors: tuple[str, ...], panel_x: float,
+    title: str, panel_letter: str, bounds: tuple[float, float, float, float], maximum: int,
+) -> None:
     plot_y, plot_size = 190.0, 900.0
     xmin, xmax, ymin, ymax = bounds
 
-    def sx(value):
+    def sx(value: float) -> float:
         return panel_x + (value - xmin) / (xmax - xmin) * plot_size
 
-    def sy(value):
+    def sy(value: float) -> float:
         return plot_y + plot_size - (value - ymin) / (ymax - ymin) * plot_size
 
-    def radius(value):
+    def radius(value: int) -> float:
         return 3.3 + 14.7 * np.sqrt(value / maximum)
 
     svg.extend(
@@ -125,7 +129,7 @@ def draw_panel(svg, rows, colors, panel_x, title, panel_letter, bounds, maximum)
     svg.append(f'<text x="{panel_x-47}" y="{plot_y+plot_size/2}" text-anchor="middle" fill="#5c6c7a" font-family="Arial" font-size="18" transform="rotate(-90 {panel_x-47} {plot_y+plot_size/2})">UMAP 2</text>')
 
 
-def main():
+def main() -> None:
     args = parse_args()
     k11_rows = read_rows(args.k11_csv)
     collapsed_k6_rows = read_rows(args.collapsed_k6_csv)
@@ -138,19 +142,19 @@ def main():
 
     svg = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="2100" height="1450" viewBox="0 0 2100 1450" role="img" aria-labelledby="title desc">',
-        '<title id="title">Discriminator separation space at k=11 and after collapse to k=6</title>',
+        '<title id="title">Discriminator separation space for k11 and collapsed_k6</title>',
         '<desc id="desc">Two aligned UMAP panels with a shared hierarchy legend showing how eleven remote-sensing-derived taxon groups collapse into six groups.</desc>',
         '<rect width="2380" height="1450" fill="#ffffff"/>',
         '<defs><marker id="legend-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#7b8994"/></marker></defs>',
         '<text x="70" y="58" fill="#1f2a36" font-family="Arial" font-size="38" font-weight="700">Discriminator separation space before and after group collapse</text>',
         '<text x="70" y="94" fill="#5c6c7a" font-family="Arial" font-size="19">Identical taxon-centroid coordinates are shown in both panels; colors indicate the assigned group at each reporting level.</text>',
     ]
-    draw_panel(svg, k11_rows, K11_MANUSCRIPT_COLORS, 90.0, "Fine partition (k=11)", "A", bounds, maximum)
-    draw_panel(svg, collapsed_k6_rows, COLLAPSED_K6_COLORS, 1110.0, "Collapsed partition (k=6)", "B", bounds, maximum)
+    draw_panel(svg, k11_rows, K11_MANUSCRIPT_COLORS, 90.0, "Fine partition (k11)", "A", bounds, maximum)
+    draw_panel(svg, collapsed_k6_rows, COLLAPSED_K6_COLORS, 1110.0, "Collapsed partition (collapsed_k6)", "B", bounds, maximum)
 
     svg.append('<text x="90" y="1184" fill="#1f2a36" font-family="Arial" font-size="24" font-weight="700">Shared group hierarchy</text>')
-    svg.append('<text x="375" y="1184" fill="#7b8994" font-family="Arial" font-size="15">k=11 groups</text>')
-    svg.append('<text x="510" y="1184" fill="#7b8994" font-family="Arial" font-size="15">collapsed k=6 group</text>')
+    svg.append('<text x="375" y="1184" fill="#7b8994" font-family="Arial" font-size="15">k11 groups</text>')
+    svg.append('<text x="510" y="1184" fill="#7b8994" font-family="Arial" font-size="15">collapsed_k6 group</text>')
     svg.append('<circle cx="1395" cy="1171" r="4" fill="#7b8994" fill-opacity="0.55"/><circle cx="1427" cy="1171" r="8" fill="#7b8994" fill-opacity="0.55"/><circle cx="1471" cy="1171" r="13" fill="#7b8994" fill-opacity="0.55"/>')
     svg.append('<text x="1495" y="1177" fill="#5c6c7a" font-family="Arial" font-size="14">area = validation support</text>')
     svg.append('<line x1="1790" y1="1171" x2="1802" y2="1171" stroke="#596773" stroke-width="2.4" stroke-linecap="round"/><line x1="1796" y1="1165" x2="1796" y2="1177" stroke="#596773" stroke-width="2.4" stroke-linecap="round"/>')

@@ -1,6 +1,6 @@
 {
   "records": 161508,
-  "probability_error_definition": "1 - ensemble probability assigned to the actual k=11 class",
+  "probability_error_definition": "1 - ensemble probability assigned to the actual k11 class",
   "distance_median_m": 2.37227725,
   "distance_q25_m": 1.457545675,
   "distance_q75_m": 3.4242861,

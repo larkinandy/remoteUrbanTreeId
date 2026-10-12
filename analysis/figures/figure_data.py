@@ -16,7 +16,7 @@ FALSE_VALUES = frozenset({"0", "false", "f", "no", "n", "", "none", "nan"})
 def boolean_series(values: pd.Series) -> pd.Series:
     """Parse common boolean encodings without treating ``'False'`` as true."""
     if pd.api.types.is_bool_dtype(values.dtype):
-        return values.fillna(False).astype(bool)
+        return values.fillna(False).eq(True)
     normalized = values.fillna("").astype(str).str.strip().str.lower()
     unknown = sorted(set(normalized) - TRUE_VALUES - FALSE_VALUES)
     if unknown:
@@ -55,7 +55,7 @@ def save_figure_formats(
 ) -> list[Path]:
     """Save the repository-standard SVG, PDF, and 600-dpi PNG outputs."""
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
-    outputs = []
+    outputs: list[Path] = []
     for extension in ("svg", "pdf", "png"):
         path = output_prefix.with_suffix(f".{extension}")
         figure.savefig(

@@ -97,6 +97,60 @@ def correlation(x: np.ndarray, y: np.ndarray, ranked: bool = False) -> tuple[flo
     return value, p_value
 
 
+def render_probability_error(
+    distance: np.ndarray,
+    probability_error: np.ndarray,
+    binned: pd.DataFrame,
+    group_space: str,
+    spearman_rho: float,
+    output_dir: Path,
+    gridsize: int,
+) -> None:
+    """Render the density panel from prepared record-level values."""
+    cmap = LinearSegmentedColormap.from_list(
+        "tree_density", ["#F7FBFF", "#C6DBEF", "#6BAED6", "#2171B5", "#08306B"]
+    )
+    figure, axis = plt.subplots(figsize=(11.2, 8.2), dpi=220)
+    axis.set_facecolor("#F7F9FA")
+    maximum_distance = max(5.0, float(distance.max()))
+    density = axis.hexbin(
+        distance, probability_error, gridsize=gridsize,
+        extent=(0.0, maximum_distance, 0.0, 1.0), mincnt=1,
+        cmap=cmap, norm=LogNorm(), linewidths=0,
+    )
+    axis.plot(binned.distance_median, binned.error_median, color="white", linewidth=4.8, alpha=0.95, zorder=3)
+    axis.plot(
+        binned.distance_median, binned.error_median, color="#B2182B",
+        linewidth=2.3, marker="o", markersize=3.4,
+        label="Median within 0.25 m bins", zorder=4,
+    )
+    axis.set(xlim=(0.0, maximum_distance), ylim=(0.0, 1.0))
+    axis.set_xlabel("Tree-center to matched-crown distance (m)", fontsize=14)
+    axis.set_ylabel(r"True-class probability error ($1-p_{true}$)", fontsize=14)
+    axis.yaxis.set_major_formatter(lambda value, position: f"{value:.0%}")
+    axis.grid(True, color="#D9E0E5", linewidth=0.75, alpha=0.55)
+    axis.tick_params(labelsize=11.5, colors="#354354")
+    axis.set_title(
+        "Classification uncertainty across crown-matching distance",
+        loc="left", fontsize=18, fontweight="bold", color="#202B38", pad=36,
+    )
+    axis.text(
+        0, 1.025,
+        f"Final pruned k11 test ensemble, reported as {group_space} · n = {len(distance):,} · "
+        f"Spearman ρ = {spearman_rho:.3f}",
+        transform=axis.transAxes, fontsize=11.8, color="#607184", va="bottom",
+    )
+    axis.legend(loc="upper left", frameon=True, facecolor="white", edgecolor="#B7C1C9", fontsize=10.5)
+    colorbar = figure.colorbar(density, ax=axis, pad=0.015, fraction=0.042)
+    colorbar.set_label("Test records per hexagon (log scale)", fontsize=11)
+    colorbar.ax.tick_params(labelsize=10)
+    figure.subplots_adjust(left=0.11, right=0.88, bottom=0.11, top=0.86)
+    save_figure_formats(
+        figure, output_dir / f"test_{group_space}_probability_error_vs_match_distance", dpi=600
+    )
+    plt.close(figure)
+
+
 def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -170,53 +224,10 @@ def main() -> None:
     }
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
-    cmap = LinearSegmentedColormap.from_list(
-        "tree_density", ["#F7FBFF", "#C6DBEF", "#6BAED6", "#2171B5", "#08306B"]
+    render_probability_error(
+        distance, probability_error, binned, args.group_space,
+        spearman_rho, args.output_dir, args.hexbin_gridsize,
     )
-    fig, ax = plt.subplots(figsize=(11.2, 8.2), dpi=220)
-    ax.set_facecolor("#F7F9FA")
-    hb = ax.hexbin(
-        distance, probability_error, gridsize=args.hexbin_gridsize,
-        extent=(0.0, max(5.0, float(distance.max())), 0.0, 1.0),
-        mincnt=1, cmap=cmap, norm=LogNorm(), linewidths=0,
-    )
-    ax.plot(
-        binned.distance_median, binned.error_median,
-        color="white", linewidth=4.8, alpha=0.95, zorder=3,
-    )
-    ax.plot(
-        binned.distance_median, binned.error_median,
-        color="#B2182B", linewidth=2.3, marker="o", markersize=3.4,
-        label="Median within 0.25 m bins", zorder=4,
-    )
-    ax.set_xlim(0.0, max(5.0, float(distance.max())))
-    ax.set_ylim(0.0, 1.0)
-    ax.set_xlabel("Tree-center to matched-crown distance (m)", fontsize=14)
-    ax.set_ylabel(r"True-class probability error ($1-p_{true}$)", fontsize=14)
-    ax.yaxis.set_major_formatter(lambda value, position: f"{value:.0%}")
-    ax.grid(True, color="#D9E0E5", linewidth=0.75, alpha=0.55)
-    ax.tick_params(labelsize=11.5, colors="#354354")
-    ax.set_title(
-        "Classification uncertainty across crown-matching distance",
-        loc="left", fontsize=18, fontweight="bold", color="#202B38", pad=36,
-    )
-    ax.text(
-        0, 1.025,
-        f"Final pruned k=11 test ensemble, reported at k={reporting_k} · n = {len(distance):,} · "
-        f"Spearman ρ = {spearman_rho:.3f}",
-        transform=ax.transAxes, fontsize=11.8, color="#607184", va="bottom",
-    )
-    ax.legend(loc="upper left", frameon=True, facecolor="white", edgecolor="#B7C1C9", fontsize=10.5)
-    cbar = fig.colorbar(hb, ax=ax, pad=0.015, fraction=0.042)
-    cbar.set_label("Test records per hexagon (log scale)", fontsize=11)
-    cbar.ax.tick_params(labelsize=10)
-    fig.subplots_adjust(left=0.11, right=0.88, bottom=0.11, top=0.86)
-    save_figure_formats(
-        fig,
-        args.output_dir / f"test_{args.group_space}_probability_error_vs_match_distance",
-        dpi=600,
-    )
-    plt.close(fig)
     print(json.dumps(summary, indent=2))
 
 

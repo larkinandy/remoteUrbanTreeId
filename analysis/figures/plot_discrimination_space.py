@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a manuscript discrimination-space SVG for a supplied partition."""
+"""Render a validated k11 or collapsed_k6 manuscript discrimination-space SVG."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import numpy as np
 from figure_config import canonical_collapse_zero_based, colors
 
 
-# The k=11 palette is nested within the balanced k=6 collapse:
+# The k11 palette is nested within collapsed_k6:
 # (1,2)->blue; (3,4,11)->orange; (5,6,9)->green; 7->vermillion;
 # 8->magenta; 10->purple. This makes the relationship between the two
 # reporting levels visually explicit while retaining distinguishable shades.
@@ -21,20 +21,20 @@ K11_COLORS = colors("k11_analytical")
 K11_MANUSCRIPT_COLORS = colors("k11_manuscript")
 COLLAPSED_K6_COLORS = colors("collapsed_k6")
 # Manuscript examples selected to make four aspects of the partition visible:
-# one representative of every k=11 group; Acer spanning groups 3, 4, 6, and 7;
-# two difficult k=11 boundary taxa that improve after the k=6 collapse; and two
+# one representative of every k11 group; Acer spanning groups 3, 4, 6, and 7;
+# two difficult k11 boundary taxa that improve after collapsed_k6; and two
 # taxa that remain difficult boundary cases after collapse.
 LABELS = {
-    # Representative taxa for manuscript k=11 groups 1--11.
+    # Representative taxa for manuscript k11 groups 1--11.
     "washingtonia_robusta", "magnolia_grandiflora", "acer_platanoides",
     "prunus_cerasifera", "tilia_cordata", "gleditsia_triacanthos",
     "liquidambar_styraciflua", "quercus_palustris", "lagerstroemia_indica",
     "platanus_acerifolia", "pinus_nigra",
     # Additional Acer examples demonstrating that groups are not taxonomic.
     "acer_palmatum", "acer_negundo", "acer_saccharinum",
-    # Difficult under k=11 but substantially improved by the k=6 collapse.
+    # Difficult under k11 but substantially improved by collapsed_k6.
     "acer_macrophyllum", "quercus_macrocarpa",
-    # Difficult boundary cases that remain under the k=6 collapse.
+    # Difficult boundary cases that remain under collapsed_k6.
     "koelreuteria_paniculata", "populus_tremuloides",
 }
 
@@ -47,7 +47,7 @@ LABEL_OFFSETS = {
 }
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--coordinates", type=Path, default=root / "analysis/figures/provenance/core_taxon_umap_coordinates.csv")
@@ -85,7 +85,62 @@ def pretty_taxon(value: str) -> str:
     return " ".join(part.capitalize() if index == 0 else part for index, part in enumerate(value.split("_")))
 
 
-def main():
+def append_group_legend(
+    svg: list[str], rows: list[dict], palette: tuple[str, ...],
+    group_count: int, hybrid_collapse: np.ndarray | None,
+) -> None:
+    """Append either the simple group legend or canonical hierarchy legend."""
+    svg.append(
+        f'<text x="1010" y="150" fill="#1f2a36" font-family="Arial" font-size="23" '
+        f'font-weight="700">{"Group hierarchy" if hybrid_collapse is not None else "Assigned group"}</text>'
+    )
+    total_records = sum(int(row["support"]) for row in rows)
+    if hybrid_collapse is None:
+        legend_step = 55 if group_count > 7 else 65
+        for group in range(group_count):
+            y = 192 + legend_step * group
+            members = [row for row in rows if row["group"] == group]
+            percent = 100.0 * sum(int(row["support"]) for row in members) / total_records
+            svg.append(f'<circle cx="1025" cy="{y-6}" r="12" fill="{palette[group]}" fill-opacity="0.82"/>')
+            svg.append(f'<text x="1025" y="{y-1}" text-anchor="middle" fill="#ffffff" font-family="Arial" font-size="12" font-weight="700" stroke="#27313a" stroke-width="0.7" paint-order="stroke">{group+1}</text>')
+            svg.append(f'<text x="1052" y="{y}" fill="#5c6c7a" font-family="Arial" font-size="15">{len(members)} taxa · {percent:.1f}% of records</text>')
+        return
+    svg.append('<text x="1022" y="174" fill="#7b8994" font-family="Arial" font-size="13" font-weight="700">k11 groups</text>')
+    svg.append('<text x="1190" y="174" fill="#7b8994" font-family="Arial" font-size="13" font-weight="700">collapsed_k6 group</text>')
+    for collapsed_group in range(6):
+        source_groups = np.flatnonzero(hybrid_collapse == collapsed_group).tolist()
+        top, center_y = 188 + 84 * collapsed_group, 222 + 84 * collapsed_group
+        members = [row for row in rows if row["group"] in source_groups]
+        percent = 100.0 * sum(int(row["support"]) for row in members) / total_records
+        svg.append(f'<rect x="1005" y="{top}" width="575" height="68" rx="9" fill="#fbfcfd" stroke="#d5dee5" stroke-width="1.2"/>')
+        for source_index, source_group in enumerate(source_groups):
+            cx = 1030 + 37 * source_index
+            svg.append(f'<circle cx="{cx}" cy="{center_y}" r="12" fill="{palette[source_group]}" fill-opacity="0.88"/>')
+            svg.append(f'<text x="{cx}" y="{center_y+5}" text-anchor="middle" fill="#ffffff" font-family="Arial" font-size="12" font-weight="700" stroke="#27313a" stroke-width="0.7" paint-order="stroke">{source_group+1}</text>')
+        svg.append(f'<line x1="1142" y1="{center_y}" x2="1180" y2="{center_y}" stroke="#7b8994" stroke-width="1.8" marker-end="url(#legend-arrow)"/>')
+        svg.append(f'<circle cx="1205" cy="{center_y}" r="14" fill="{COLLAPSED_K6_COLORS[collapsed_group]}" fill-opacity="0.88"/>')
+        svg.append(f'<text x="1205" y="{center_y+5}" text-anchor="middle" fill="#ffffff" font-family="Arial" font-size="13" font-weight="700" stroke="#27313a" stroke-width="0.7" paint-order="stroke">{collapsed_group+1}</text>')
+        svg.append(f'<text x="1232" y="{center_y-3}" fill="#1f2a36" font-family="Arial" font-size="15" font-weight="700">{len(members)} taxa</text>')
+        svg.append(f'<text x="1232" y="{center_y+18}" fill="#5c6c7a" font-family="Arial" font-size="14">{percent:.1f}% of records</text>')
+
+
+def append_point_legend(svg: list[str], group_count: int) -> None:
+    """Append point-size, rare-taxon, and UMAP interpretation keys."""
+    title_y = 820 if group_count > 7 else 700
+    circle_y, label_y, interpretation_y = title_y + 48, title_y + 90, title_y + 145
+    svg.extend([
+        f'<text x="1010" y="{title_y}" fill="#1f2a36" font-family="Arial" font-size="20" font-weight="700">Point size</text>',
+        f'<circle cx="1040" cy="{circle_y}" r="5" fill="#7b8994" fill-opacity="0.55"/><circle cx="1125" cy="{circle_y}" r="11" fill="#7b8994" fill-opacity="0.55"/><circle cx="1225" cy="{circle_y}" r="17" fill="#7b8994" fill-opacity="0.55"/>',
+        f'<text x="1010" y="{label_y}" fill="#5c6c7a" font-family="Arial" font-size="15">fewer records</text><text x="1190" y="{label_y}" fill="#5c6c7a" font-family="Arial" font-size="15">more records</text>',
+        f'<line x1="1035" y1="{label_y + 32}" x2="1047" y2="{label_y + 32}" stroke="#596773" stroke-width="2.4" stroke-linecap="round"/><line x1="1041" y1="{label_y + 26}" x2="1041" y2="{label_y + 38}" stroke="#596773" stroke-width="2.4" stroke-linecap="round"/>',
+        f'<text x="1060" y="{label_y + 38}" fill="#5c6c7a" font-family="Arial" font-size="15">rare-extension taxon (fixed size)</text>',
+        f'<text x="1010" y="{interpretation_y}" fill="#1f2a36" font-family="Arial" font-size="20" font-weight="700">Interpretation</text>',
+        f'<text x="1010" y="{interpretation_y + 32}" fill="#5c6c7a" font-family="Arial" font-size="15">Nearby centroids indicate taxa</text><text x="1010" y="{interpretation_y + 54}" fill="#5c6c7a" font-family="Arial" font-size="15">with similar learned signatures.</text>',
+        f'<text x="1010" y="{interpretation_y + 89}" fill="#5c6c7a" font-family="Arial" font-size="15">UMAP preserves local neighborhoods;</text><text x="1010" y="{interpretation_y + 111}" fill="#5c6c7a" font-family="Arial" font-size="15">axis values have no physical units.</text>',
+    ])
+
+
+def main() -> None:
     args = parse_args()
     if args.group_space == "collapsed_k6" and args.group_order:
         raise ValueError("--group-order is display-only for k11 and cannot be combined with collapsed_k6")
@@ -138,7 +193,7 @@ def main():
             displayed[group_relabel] = hybrid_collapse
             hybrid_collapse = displayed
         if group_count != 11 or len(hybrid_collapse) != group_count:
-            raise ValueError("--hybrid-legend requires the frozen 11-group partition")
+            raise ValueError("--hybrid-legend requires the frozen k11 partition")
     rows = []
     for row in coordinates:
         taxon = row["taxon"]
@@ -206,10 +261,16 @@ def main():
     ypad = (ys.max() - ys.min()) * 0.04
     xmin, xmax = xs.min() - xpad, xs.max() + xpad
     ymin, ymax = ys.min() - ypad, ys.max() + ypad
-    def sx(value): return plot_x + (value - xmin) / (xmax - xmin) * plot_size
-    def sy(value): return plot_y + plot_size - (value - ymin) / (ymax - ymin) * plot_size
+    def sx(value: float) -> float:
+        return plot_x + (value - xmin) / (xmax - xmin) * plot_size
+
+    def sy(value: float) -> float:
+        return plot_y + plot_size - (value - ymin) / (ymax - ymin) * plot_size
+
     maximum = max(r["support"] for r in rows)
-    def radius(value): return 3.1 + 13.9 * np.sqrt(value / maximum)
+
+    def radius(value: int) -> float:
+        return 3.1 + 13.9 * np.sqrt(value / maximum)
 
     svg = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1100" viewBox="0 0 1680 1100" role="img" aria-labelledby="title desc">',
@@ -255,57 +316,10 @@ def main():
     svg.extend([
         '<text x="515" y="1012" text-anchor="middle" fill="#5c6c7a" font-family="Arial" font-size="17">UMAP 1</text>',
         '<text x="42" y="545" text-anchor="middle" fill="#5c6c7a" font-family="Arial" font-size="17" transform="rotate(-90 42 545)">UMAP 2</text>',
-        f'<text x="1010" y="150" fill="#1f2a36" font-family="Arial" font-size="23" font-weight="700">{"Group hierarchy" if hybrid_collapse is not None else "Assigned group"}</text>',
     ])
-    total_records = sum(row["support"] for row in rows)
-    if hybrid_collapse is not None:
-        svg.append('<text x="1022" y="174" fill="#7b8994" font-family="Arial" font-size="13" font-weight="700">k=11 groups</text>')
-        svg.append('<text x="1190" y="174" fill="#7b8994" font-family="Arial" font-size="13" font-weight="700">collapsed k=6 group</text>')
-        for collapsed_group in range(6):
-            source_groups = np.flatnonzero(hybrid_collapse == collapsed_group).tolist()
-            top = 188 + 84 * collapsed_group
-            center_y = top + 34
-            collapsed_members = [row for row in rows if row["group"] in source_groups]
-            records = sum(row["support"] for row in collapsed_members)
-            record_percent = 100.0 * records / total_records
-            svg.append(f'<rect x="1005" y="{top}" width="575" height="68" rx="9" fill="#fbfcfd" stroke="#d5dee5" stroke-width="1.2"/>')
-            for source_index, source_group in enumerate(source_groups):
-                cx = 1030 + 37 * source_index
-                svg.append(f'<circle cx="{cx}" cy="{center_y}" r="12" fill="{colors[source_group]}" fill-opacity="0.88"/>')
-                svg.append(f'<text x="{cx}" y="{center_y+5}" text-anchor="middle" fill="#ffffff" font-family="Arial" font-size="12" font-weight="700" stroke="#27313a" stroke-width="0.7" paint-order="stroke">{source_group+1}</text>')
-            svg.append(f'<line x1="1142" y1="{center_y}" x2="1180" y2="{center_y}" stroke="#7b8994" stroke-width="1.8" marker-end="url(#legend-arrow)"/>')
-            svg.append(f'<circle cx="1205" cy="{center_y}" r="14" fill="{COLLAPSED_K6_COLORS[collapsed_group]}" fill-opacity="0.88"/>')
-            svg.append(f'<text x="1205" y="{center_y+5}" text-anchor="middle" fill="#ffffff" font-family="Arial" font-size="13" font-weight="700" stroke="#27313a" stroke-width="0.7" paint-order="stroke">{collapsed_group+1}</text>')
-            svg.append(f'<text x="1232" y="{center_y-3}" fill="#1f2a36" font-family="Arial" font-size="15" font-weight="700">{len(collapsed_members)} taxa</text>')
-            svg.append(f'<text x="1232" y="{center_y+18}" fill="#5c6c7a" font-family="Arial" font-size="14">{record_percent:.1f}% of records</text>')
-    else:
-        legend_step = 55 if group_count > 7 else 65
-        for group in range(group_count):
-            y = 192 + legend_step * group
-            member = [row for row in rows if row["group"] == group]
-            records = sum(row["support"] for row in member)
-            record_percent = 100.0 * records / total_records
-            svg.append(f'<circle cx="1025" cy="{y-6}" r="12" fill="{colors[group]}" fill-opacity="0.82"/>')
-            svg.append(f'<text x="1025" y="{y-1}" text-anchor="middle" fill="#ffffff" font-family="Arial" font-size="12" font-weight="700" stroke="#27313a" stroke-width="0.7" paint-order="stroke">{group+1}</text>')
-            svg.append(f'<text x="1052" y="{y}" fill="#5c6c7a" font-family="Arial" font-size="15">{len(member)} taxa · {record_percent:.1f}% of records</text>')
-    point_title_y = 820 if group_count > 7 else 700
-    point_circle_y = point_title_y + 48
-    point_label_y = point_title_y + 90
-    interpretation_y = point_title_y + 145
-    svg.extend([
-        f'<text x="1010" y="{point_title_y}" fill="#1f2a36" font-family="Arial" font-size="20" font-weight="700">Point size</text>',
-        f'<circle cx="1040" cy="{point_circle_y}" r="5" fill="#7b8994" fill-opacity="0.55"/><circle cx="1125" cy="{point_circle_y}" r="11" fill="#7b8994" fill-opacity="0.55"/><circle cx="1225" cy="{point_circle_y}" r="17" fill="#7b8994" fill-opacity="0.55"/>',
-        f'<text x="1010" y="{point_label_y}" fill="#5c6c7a" font-family="Arial" font-size="15">fewer records</text><text x="1190" y="{point_label_y}" fill="#5c6c7a" font-family="Arial" font-size="15">more records</text>',
-        f'<line x1="1035" y1="{point_label_y + 32}" x2="1047" y2="{point_label_y + 32}" stroke="#596773" stroke-width="2.4" stroke-linecap="round"/>',
-        f'<line x1="1041" y1="{point_label_y + 26}" x2="1041" y2="{point_label_y + 38}" stroke="#596773" stroke-width="2.4" stroke-linecap="round"/>',
-        f'<text x="1060" y="{point_label_y + 38}" fill="#5c6c7a" font-family="Arial" font-size="15">rare-extension taxon (fixed size)</text>',
-        f'<text x="1010" y="{interpretation_y}" fill="#1f2a36" font-family="Arial" font-size="20" font-weight="700">Interpretation</text>',
-        f'<text x="1010" y="{interpretation_y + 32}" fill="#5c6c7a" font-family="Arial" font-size="15">Nearby centroids indicate taxa</text>',
-        f'<text x="1010" y="{interpretation_y + 54}" fill="#5c6c7a" font-family="Arial" font-size="15">with similar learned signatures.</text>',
-        f'<text x="1010" y="{interpretation_y + 89}" fill="#5c6c7a" font-family="Arial" font-size="15">UMAP preserves local neighborhoods;</text>',
-        f'<text x="1010" y="{interpretation_y + 111}" fill="#5c6c7a" font-family="Arial" font-size="15">axis values have no physical units.</text>',
-        '</svg>',
-    ])
+    append_group_legend(svg, rows, colors, group_count, hybrid_collapse)
+    append_point_legend(svg, group_count)
+    svg.append('</svg>')
     output = args.output_dir / args.output_name
     output.write_text("\n".join(svg) + "\n", encoding="utf-8")
     csv_output = output.with_suffix(".csv")
