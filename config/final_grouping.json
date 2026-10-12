@@ -1,7 +1,37 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "intermediate_group_count": 11,
   "reported_group_count": 6,
+  "embedding_dimension": 64,
+  "core_taxon_count": 280,
+  "rare_extension_taxon_count": 299,
+  "total_taxon_count": 579,
+  "group_indexing": {
+    "npz_arrays": "zero-based",
+    "json_collapse_map": "one-based",
+    "manuscript_displays": "one-based"
+  },
+  "intermediate_group_display_labels": [
+    "Intermediate Group 1",
+    "Intermediate Group 2",
+    "Intermediate Group 3",
+    "Intermediate Group 4",
+    "Intermediate Group 5",
+    "Intermediate Group 6",
+    "Intermediate Group 7",
+    "Intermediate Group 8",
+    "Intermediate Group 9",
+    "Intermediate Group 10",
+    "Intermediate Group 11"
+  ],
+  "reported_group_display_labels": [
+    "Group 1",
+    "Group 2",
+    "Group 3",
+    "Group 4",
+    "Group 5",
+    "Group 6"
+  ],
   "minimum_core_taxon_records": 500,
   "minimum_extended_taxon_records": 50,
   "partition_file": "final_k11_partition.npz",
@@ -12,8 +42,19 @@
   "core_group_prototypes_sha256": "c154b1c754e1cd6593b6effba86bdbc851dd62a23a268afa7dee4af79de679a3",
   "collapse_artifact_file": "final_k11_to_k6_collapse.npz",
   "collapse_artifact_sha256": "c6623e73100a95172f210d0c5ca2aa39f49894813cbf8b09f7b309f5343cf62f",
+  "taxon_mapping_table_file": "frozen_taxon_group_mapping.csv",
+  "taxon_mapping_table_sha256": "a54adf153bcaec1795a9973068c84211702810b14df70d3683ceb390a8130838",
   "collapse_map_one_based": [1, 1, 2, 2, 3, 3, 4, 5, 3, 6, 2],
   "collapse_rule": "Sum the ensembled probabilities of intermediate classes assigned to each reported group, then select the largest collapsed probability.",
+  "selection_method": {
+    "scope": "The 280 core taxa represented in discriminator training; rare-extension taxa and discriminator test records were excluded.",
+    "group_count_selection": "A validation-only constrained variance-aware hierarchy compared candidate group counts using separately reported predictive recoverability, variance-standardized separation, and balance constraints.",
+    "core_assignment_freeze": "After selecting k=11, core assignments were frozen from 500 within-taxon bootstrap replicates using the modal consensus partition.",
+    "reported_collapse_selection": "The fixed balanced 11-to-6 validation candidate was selected from admissible collapses to limit the largest record and taxon shares while retaining comparable macro_f1 and minimum-group F1.",
+    "rare_taxon_assignment": "Taxa with 50–499 total records were assigned to the nearest fixed k11 group prototype using deterministic development-only centroids; held-out rare-taxon records were not used.",
+    "rare_taxon_split": "The minimum support of 50 records was applied before an 80% development and 20% held-out split; consequently, rare_development_counts begins at 40 and rare_test_counts begins at 10.",
+    "test_use": "Neither discriminator nor stage-two test records were used to select k, define core groups, select the collapse, assign rare taxa, or select checkpoints."
+  },
   "selection_data": "discriminator validation partition only",
   "independent_evaluation_data": "discriminator test partition",
   "notes": [
