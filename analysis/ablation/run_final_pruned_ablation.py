@@ -25,7 +25,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--modality", action="append", choices=FINAL_MODALITIES, help="Run only selected branches; repeat as needed.")
     parser.add_argument("--complete-shard-root", type=Path, required=True)
     parser.add_argument("--prepared-mmap-root", type=Path, required=True)
-    parser.add_argument("--species-partition", type=Path, default=ROOT / "config" / "final_k11_partition.npz")
     parser.add_argument("--split-manifest", type=Path, required=True)
     parser.add_argument("--model-output-dir", type=Path, required=True)
     parser.add_argument("--result-output-dir", type=Path, required=True)
@@ -60,7 +59,7 @@ def stream(command: list[str], log_path: Path) -> None:
 
 def main() -> int:
     args = parse_args()
-    for path in (TRAINER, EVALUATOR, args.complete_shard_root, args.prepared_mmap_root, args.species_partition, args.split_manifest):
+    for path in (TRAINER, EVALUATOR, args.complete_shard_root, args.prepared_mmap_root, args.split_manifest):
         if not path.exists():
             raise FileNotFoundError(path)
     validate_split_manifest(args.split_manifest)

@@ -24,8 +24,6 @@ def data_arguments(args: Namespace, output_dir: Path, run_name: str) -> list[str
         "--complete-shard-pattern", "*_part*_tree_centered_complete_inputs.npz",
         *_pair("--prepared-mmap-root", args.prepared_mmap_root),
         *_pair("--output-dir", output_dir), *_pair("--run-name", run_name),
-        "--grouping-scheme", "species_partition",
-        *_pair("--species-partition", args.species_partition),
         *_pair("--split-manifest", args.split_manifest),
     ]
 
@@ -110,7 +108,7 @@ def training_command(args: Namespace, output_dir: Path, run_name: str, exclusion
         command += ["--exclude-modality", modality]
     command += ["--device", args.device, "--export-validation-predictions", "--validation-only-pilot"]
     if args.overwrite:
-        command.append("--force")  # Legacy option in the lower-level trainer.
+        command.append("--overwrite")
     return command
 
 
@@ -121,12 +119,12 @@ def ensemble_command(args: Namespace, model_run: Path, output_dir: Path, run_nam
         *_pair("--complete-shard-root", args.complete_shard_root),
         "--complete-shard-pattern", "*_part*_tree_centered_complete_inputs.npz",
         *_pair("--prepared-mmap-root", args.prepared_mmap_root), *_pair("--output-dir", output_dir),
-        *_pair("--run-name", run_name), "--grouping-scheme", "species_partition",
-        *_pair("--species-partition", args.species_partition), *_pair("--split-manifest", args.split_manifest),
+        *_pair("--run-name", run_name),
+        *_pair("--split-manifest", args.split_manifest),
         "--split", "test", *_pair("--batch-size", args.batch_size), *_pair("--num-workers", args.num_workers),
-        *_pair("--max-shard-cache", args.max_shard_cache), "--collapse-map", canonical_collapse_map(),
+        *_pair("--max-shard-cache", args.max_shard_cache),
         "--device", args.device, "--export-predictions",
     ]
     if args.overwrite:
-        command.append("--force")  # Legacy option in the lower-level evaluator.
+        command.append("--overwrite")
     return command

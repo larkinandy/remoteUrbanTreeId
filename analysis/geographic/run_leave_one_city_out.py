@@ -53,7 +53,6 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("--complete-shard-root", type=Path, required=True)
     p.add_argument("--prepared-mmap-root", type=Path, required=True)
-    p.add_argument("--species-partition", type=Path, default=DEFAULT_PARTITION)
     p.add_argument("--grouping-config", type=Path, default=DEFAULT_GROUPING)
     p.add_argument("--geographic-config", type=Path, default=DEFAULT_GEOGRAPHIC_CONFIG)
     p.add_argument("--split-manifest", type=Path, required=True)
@@ -170,7 +169,6 @@ def training_command(a: argparse.Namespace, city: str, run_name: str) -> list[st
         "--complete-shard-pattern", "*_part*_tree_centered_complete_inputs.npz",
         "--prepared-mmap-root", str(a.prepared_mmap_root),
         "--output-dir", str(a.model_output_dir), "--run-name", run_name,
-        "--grouping-scheme", "species_partition", "--species-partition", str(a.species_partition),
         "--split-manifest", str(a.split_manifest), "--leave-one-city-out-test-city", city,
         "--epochs", str(a.epochs), "--early-stopping-patience", str(a.early_stopping_patience),
         "--batch-size", str(a.batch_size), "--num-workers", str(a.num_workers), "--eval-num-workers", "0",
@@ -181,25 +179,25 @@ def training_command(a: argparse.Namespace, city: str, run_name: str) -> list[st
         "--export-validation-predictions", "--validation-only-pilot",
     ]
     if a.overwrite:
-        cmd.append("--force")
+        cmd.append("--overwrite")
     return cmd
 
 
 def evaluation_command(a: argparse.Namespace, city: str, model_run: Path) -> list[str]:
     """Construct independent focal-city ensemble inference."""
-    collapse_map = collapse_map_string(a.grouping_config)
     cmd = [
         sys.executable, str(EVALUATOR), "--model-run-dir", str(model_run), "--top-k", "5",
         "--complete-shard-root", str(a.complete_shard_root),
         "--complete-shard-pattern", "*_part*_tree_centered_complete_inputs.npz",
         "--prepared-mmap-root", str(a.prepared_mmap_root), "--output-dir", str(a.result_output_dir),
-        "--run-name", f"loco_{city}_test_top5_ensemble", "--grouping-scheme", "species_partition",
-        "--species-partition", str(a.species_partition), "--city-token", city, "--split", "test",
+        "--run-name", f"loco_{city}_test_top5_ensemble",
+        "--split-manifest", str(a.split_manifest),
+        "--city-token", city, "--split", "test",
         "--batch-size", str(a.batch_size), "--num-workers", "2", "--max-shard-cache", str(a.max_shard_cache),
-        "--collapse-map", collapse_map, "--device", a.device, "--export-predictions",
+        "--device", a.device, "--export-predictions",
     ]
     if a.overwrite:
-        cmd.append("--force")
+        cmd.append("--overwrite")
     return cmd
 
 
@@ -208,7 +206,7 @@ def main() -> int:
     a = parse_args()
     required = [
         TRAINER, EVALUATOR, a.complete_shard_root, a.prepared_mmap_root,
-        a.species_partition, a.grouping_config, a.geographic_config, a.split_manifest,
+        a.grouping_config, a.geographic_config, a.split_manifest,
         a.reference_test_predictions, a.qa_metadata,
     ]
     for path in required:

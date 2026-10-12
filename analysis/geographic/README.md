@@ -36,8 +36,8 @@ The training wrappers derive eligible target cities from the QA-screened
 primary test predictions. They write a restart-safe `run_status.csv` manifest
 beside the model outputs after each training or inference stage. Re-running a
 wrapper skips completed artifacts unless `--overwrite` is supplied. The
-wrappers translate that public option to the legacy `--force` option expected
-by the shared stage-two trainer and inference program; `--force` is not part of
+wrappers pass that option directly to the shared stage-two trainer and
+inference program; the deprecated `--force` spelling is not part of
 the geographic-analysis interface.
 
 The split manifest is intentionally supplied as an explicit argument because

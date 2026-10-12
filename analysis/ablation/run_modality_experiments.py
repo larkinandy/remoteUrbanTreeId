@@ -33,7 +33,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--complete-shard-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--prepared-mmap-root", type=Path, required=True)
-    parser.add_argument("--species-partition", type=Path, default=DEFAULT_PARTITION)
     parser.add_argument("--split-manifest", type=Path, required=True)
     parser.add_argument("--run-suffix", default="v1")
     parser.add_argument("--epochs", type=int, default=CONFIG["training"]["epochs"])
@@ -74,7 +73,6 @@ def main() -> int:
         (TRAINER, "trainer"),
         (args.complete_shard_root, "complete shard root"),
         (args.prepared_mmap_root, "prepared mmap root"),
-        (args.species_partition, "k=11 partition"),
         (args.split_manifest, "split manifest"),
     ):
         if not path.exists():

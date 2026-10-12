@@ -6,28 +6,20 @@ parameters selected from the independent test set.
 
 ## Directory layout
 
-<<<<<<< Updated upstream
-
 <img src = https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/Discriminator.png width="1024">
 
 <img src = https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/Architecture.png width="1024">
 
-
-## Rebuild the k=5--12 Oracle experiment
-=======
 - `discriminator/` trains the fine-taxon discriminator, constructs the fixed
   intermediate groups from validation embeddings, extends the partition to
-  taxa with 50--499 records, and evaluates the frozen mapping independently.
+  taxa with 50–499 records, and evaluates the frozen mapping independently.
 - `stage2/` trains the fixed-partition classifier and evaluates checkpoint
   ensembles.
 - `model_components.py` contains shared PyTorch encoders and runtime helpers.
-- The two legacy `*_k6_*` entry points are thin compatibility wrappers retained
-  for already-running revision jobs; they contain no model implementation.
 - `../config/final_k11_partition.npz` is the frozen taxon-to-intermediate-group
   mapping used by the manuscript model.
 - `../config/final_grouping.json` records the fixed 11-to-6 collapse and the
   partition checksum.
->>>>>>> Stashed changes
 
 Generated checkpoints, embeddings, prediction exports, and input shards are
 not stored in Git.
@@ -81,20 +73,17 @@ interaction, Sentinel-2 phenology, raw Sentinel-2 with PRISM variables, and
 satellite embeddings.
 
 ```powershell
-python model/stage2/train_fixed_partition_classifier.py `
-  --complete-shard-root H:/TreeCenteredModelInputs/tree_centered_complete_sharded100k_prism_daily3_clean `
-  --prepared-mmap-root H:/TreeCenteredModelInputs/tree_centered_prepared_float32_v1 `
-  --grouping-scheme species_partition `
-  --species-partition config/final_k11_partition.npz `
-  --split-manifest H:/path/to/reviewer_stage2_loader_manifest.csv.gz `
-  --use-naip-chm-interaction-branch `
-  --naip-encoder-normalization group `
-  --chm-encoder-normalization group `
-  --interaction-encoder-normalization group `
-  --exclude-modality tree_centered_structure `
-  --save-top-k-checkpoints 5 `
+python model/stage2/run_final_model.py `
+  --complete-shard-root "$DATA_ROOT/tree_centered_complete_sharded100k_prism_daily3_clean" `
+  --prepared-mmap-root "$DATA_ROOT/tree_centered_prepared_float32_v1" `
+  --split-manifest "$DATA_ROOT/reviewer_stage2_loader_manifest.csv.gz" `
+  --output-dir "$DATA_ROOT/stage2_models" `
   --device cuda
 ```
+
+`stage2/final_model_config.json` freezes the architecture, optimization,
+checkpoint-selection, and pruning settings used for this command. The launcher
+validates the checked-in grouping artifacts before starting training.
 
 The exact split manifest must be reused for all final, ablation, and
 single-modality models. Test records must not be used for checkpoint selection
@@ -109,14 +98,18 @@ collapsed prediction.
 
 ```powershell
 python model/stage2/evaluate_checkpoint_ensemble.py `
-  --model-run-dir H:/path/to/final_model_run `
+  --model-run-dir "$DATA_ROOT/stage2_models/final_pruned_k11_classifier" `
+  --complete-shard-root "$DATA_ROOT/tree_centered_complete_sharded100k_prism_daily3_clean" `
+  --prepared-mmap-root "$DATA_ROOT/tree_centered_prepared_float32_v1" `
+  --split-manifest "$DATA_ROOT/reviewer_stage2_loader_manifest.csv.gz" `
+  --output-dir "$DATA_ROOT/stage2_evaluation" `
   --top-k 5 `
-  --grouping-scheme species_partition `
-  --species-partition config/final_k11_partition.npz `
-  --collapse-map 1,1,2,2,3,3,4,5,3,6,2 `
   --split test `
   --device cuda
 ```
+
+The evaluator loads the checksum-validated collapse from
+`config/final_k11_to_k6_collapse.npz`; the mapping is not entered manually.
 
 The ensemble is formed before the probability-sum collapse. The six reported
 groups are therefore not predictions from a separately trained six-class

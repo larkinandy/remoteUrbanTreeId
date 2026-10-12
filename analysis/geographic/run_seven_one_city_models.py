@@ -31,7 +31,6 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("--city", action="append", help="Run selected configured source city; repeat as needed.")
     p.add_argument("--complete-shard-root", type=Path, required=True)
-    p.add_argument("--species-partition", type=Path, default=ROOT / "config" / "final_k11_partition.npz")
     p.add_argument("--grouping-config", type=Path, default=DEFAULT_GROUPING)
     p.add_argument("--geographic-config", type=Path, default=DEFAULT_CONFIG)
     p.add_argument("--split-manifest", type=Path, required=True)
@@ -77,7 +76,6 @@ def training_command(a: argparse.Namespace, city: str, run_name: str, model_root
         "--complete-shard-root", str(a.complete_shard_root),
         "--complete-shard-pattern", "*_part*_tree_centered_complete_inputs.npz",
         "--output-dir", str(model_root), "--run-name", run_name,
-        "--grouping-scheme", "species_partition", "--species-partition", str(a.species_partition),
         "--split-manifest", str(a.split_manifest), "--city-token", city,
         "--epochs", str(a.epochs), "--early-stopping-patience", str(a.early_stopping_patience),
         "--batch-size", str(a.batch_size), "--num-workers", str(a.num_workers), "--eval-num-workers", "0",
@@ -89,7 +87,7 @@ def training_command(a: argparse.Namespace, city: str, run_name: str, model_root
         "--validation-only-pilot",
     ]
     if a.overwrite:
-        command.append("--force")
+        command.append("--overwrite")
     return command
 
 
@@ -108,17 +106,15 @@ def evaluation_command(
         "--complete-shard-root", str(a.complete_shard_root),
         "--complete-shard-pattern", "*_part*_tree_centered_complete_inputs.npz",
         "--output-dir", str(result_root), "--run-name", f"{city}_{suffix}_test_top5",
-        "--grouping-scheme", "species_partition", "--species-partition", str(a.species_partition),
         "--split-manifest", str(a.split_manifest), "--split", "test", "--batch-size", str(a.batch_size),
         "--num-workers", str(a.num_workers), "--max-shard-cache", str(a.max_shard_cache),
-        "--collapse-map", collapse_map_string(a.grouping_config),
         "--device", a.device, "--export-predictions",
     ]
     targets = (city,) if within_city else tuple(value for value in target_cities if value != city)
     for target in targets:
         command.extend(["--city-token", target])
     if a.overwrite:
-        command.append("--force")
+        command.append("--overwrite")
     return command
 
 
@@ -126,7 +122,7 @@ def main() -> int:
     """Run or resume the configured one-city model campaign."""
     a = parse_args()
     required = (
-        TRAINER, EVALUATOR, a.complete_shard_root, a.species_partition,
+        TRAINER, EVALUATOR, a.complete_shard_root,
         a.grouping_config, a.geographic_config, a.split_manifest,
         a.reference_test_predictions, a.qa_metadata,
     )

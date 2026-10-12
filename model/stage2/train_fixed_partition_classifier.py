@@ -2,12 +2,10 @@
 """Train the stage-two classifier for a frozen taxon partition.
 
 This script uses the clean standalone complete shards and maps each record's
-scientific label through a saved centroid partition. ``species_partition``
-accepts an arbitrary fixed species-level partition; the repository default is
-the frozen 11-group manuscript mapping including taxa with at least 50 records.
-
-* species_k6: species/binomial-level partition, genera may be split.
-* genus_k6: genus-constrained partition, each genus appears in one group.
+scientific label through a fixed species-level partition. The repository
+default is the frozen 11-group manuscript mapping including taxa with at least
+50 records. Reported six-group results are produced after checkpoint
+ensembling; they are not trained here as a separate label space.
 """
 
 from __future__ import annotations
@@ -32,50 +30,18 @@ for module_dir in (HERE, MODEL_DIR, DISCRIMINATOR_DIR):
 
 import train_taxon_discriminator as clean_disc
 import clean_mmap_loader
+import artifacts
+import checkpointing
+import cli as stage2_cli
 
-
-CLEAN_ROOT = Path(r"H:\TreeCenteredModelInputs")
-DEFAULT_SHARD_ROOT = CLEAN_ROOT / "tree_centered_complete_sharded100k_clean"
-DEFAULT_OUTPUT_DIR = CLEAN_ROOT / "collapsed_group_models_clean"
-DEFAULT_PARTITION_BASE = (
-    CLEAN_ROOT
-    / "taxon_discrimination_clean"
-    / "clean_abq_atl_taxon_discriminator"
-)
-DEFAULT_SPECIES_K6 = (
-    DEFAULT_PARTITION_BASE
-    / "global_centroid_taxon_partitions_clean_exploratory"
-    / "k06_partition.npz"
-)
-DEFAULT_GENUS_K6 = (
-    DEFAULT_PARTITION_BASE
-    / "genus_constrained_centroid_partitions_clean_exploratory"
-    / "k06_partition.npz"
-)
-DEFAULT_MANUSCRIPT_PARTITION = (
-    Path(__file__).resolve().parents[2] / "config" / "final_k11_partition.npz"
-)
+DEFAULT_MANUSCRIPT_PARTITION = artifacts.FINAL_PARTITION
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse the general fixed-k11 training and experiment options."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--complete-shard-root", type=Path, default=DEFAULT_SHARD_ROOT)
-    parser.add_argument("--complete-shard-pattern", default="*_part*_tree_centered_complete_inputs.npz")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    stage2_cli.add_shard_io_arguments(parser)
     parser.add_argument("--run-name", default="fixed_k11_stage2_classifier")
-    parser.add_argument(
-        "--grouping-scheme",
-        choices=("species_partition", "species_k6", "genus_k6"),
-        default="species_partition",
-    )
-    parser.add_argument(
-        "--species-partition",
-        type=Path,
-        default=DEFAULT_MANUSCRIPT_PARTITION,
-        help="Fixed species-level partition; defaults to the frozen manuscript k=11 mapping.",
-    )
-    parser.add_argument("--species-k6-partition", type=Path, default=DEFAULT_SPECIES_K6)
-    parser.add_argument("--genus-k6-partition", type=Path, default=DEFAULT_GENUS_K6)
     parser.add_argument("--city-token", action="append", default=None)
     parser.add_argument("--exclude-city-token", action="append", default=[])
     parser.add_argument(
@@ -94,16 +60,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--test-fraction", type=float, default=0.10)
     parser.add_argument("--max-val-samples", type=int, default=150000)
     parser.add_argument("--max-test-samples", type=int, default=150000)
-    parser.add_argument(
-        "--split-manifest",
-        type=Path,
-        default=None,
-        help=(
-            "Optional CSV/CSV.GZ with record_key and split columns. record_key must be "
-            "city_token|tree_id|crop_index. When supplied, inherited assignments replace "
-            "random split creation and evaluation caps."
-        ),
-    )
+    stage2_cli.add_split_manifest_argument(parser, required=False)
     parser.add_argument("--reassign-capped-eval-to-train", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--exclude-qa-from-model", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
@@ -361,111 +318,27 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Stop after training and validation; do not run final test inference.",
     )
-    parser.add_argument("--force", action="store_true")
+    stage2_cli.add_overwrite_argument(parser)
     return parser.parse_args()
 
 
-def selection_score(metrics: dict[str, Any], args: argparse.Namespace) -> float:
-    if args.checkpoint_selection_score == "accuracy":
-        return float(metrics["accuracy"])
-    if args.checkpoint_selection_score == "weighted_f1":
-        return float(metrics["weighted_f1"])
-    if args.checkpoint_selection_score == "blended":
-        return float(
-            args.blended_score_macro_weight * metrics["macro_f1"]
-            + args.blended_score_accuracy_weight * metrics["accuracy"]
-            + args.blended_score_weighted_weight * metrics["weighted_f1"]
-        )
-    return float(metrics["macro_f1"])
-
-
-def checkpoint_payload(
-    model,
-    group_names: list[str],
-    label_to_group: dict[str, int],
-    structure_mean: np.ndarray,
-    structure_std: np.ndarray,
-    phenology_mean: np.ndarray | None,
-    phenology_std: np.ndarray | None,
-    raw_sentinel_mean: np.ndarray | None,
-    raw_sentinel_std: np.ndarray | None,
-    satellite_embedding_mean: np.ndarray | None,
-    satellite_embedding_std: np.ndarray | None,
-    prism_mean: np.ndarray | None,
-    prism_std: np.ndarray | None,
-    args: argparse.Namespace,
-    epoch: int,
-    val_metrics: dict[str, Any],
-    score: float,
-) -> dict[str, Any]:
-    return {
-        "model_state_dict": model.state_dict(),
-        "group_names": group_names,
-        "label_to_group": label_to_group,
-        "structure_mean": clean_disc.train_base.torch.as_tensor(structure_mean),
-        "structure_std": clean_disc.train_base.torch.as_tensor(structure_std),
-        "phenology_mean": None if phenology_mean is None else clean_disc.train_base.torch.as_tensor(phenology_mean),
-        "phenology_std": None if phenology_std is None else clean_disc.train_base.torch.as_tensor(phenology_std),
-        "raw_sentinel_mean": None if raw_sentinel_mean is None else clean_disc.train_base.torch.as_tensor(raw_sentinel_mean),
-        "raw_sentinel_std": None if raw_sentinel_std is None else clean_disc.train_base.torch.as_tensor(raw_sentinel_std),
-        "satellite_embedding_mean": None if satellite_embedding_mean is None else clean_disc.train_base.torch.as_tensor(satellite_embedding_mean),
-        "satellite_embedding_std": None if satellite_embedding_std is None else clean_disc.train_base.torch.as_tensor(satellite_embedding_std),
-        "prism_mean": None if prism_mean is None else clean_disc.train_base.torch.as_tensor(prism_mean),
-        "prism_std": None if prism_std is None else clean_disc.train_base.torch.as_tensor(prism_std),
-        "epoch": int(epoch),
-        "selection_score": float(score),
-        "selection_metric": args.checkpoint_selection_score,
-        "val_metrics": {key: value for key, value in val_metrics.items() if key != "per_class"},
-        "args": clean_disc.safe_json_args(args),
-    }
-
-
-def save_top_k_checkpoint(
-    payload: dict[str, Any],
-    run_dir: Path,
-    top_k: int,
-    saved_top: list[tuple[float, Path]],
-) -> list[tuple[float, Path]]:
-    if top_k <= 0:
-        return saved_top
-    ckpt_dir = run_dir / "top_checkpoints"
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-    score = float(payload["selection_score"])
-    epoch = int(payload["epoch"])
-    path = ckpt_dir / f"checkpoint_epoch_{epoch:03d}_score_{score:.6f}.pt"
-    clean_disc.train_base.torch.save(payload, path)
-    saved_top.append((score, path))
-    saved_top = sorted(saved_top, key=lambda item: item[0], reverse=True)
-    while len(saved_top) > top_k:
-        _old_score, old_path = saved_top.pop(-1)
-        if old_path.exists():
-            old_path.unlink()
-    manifest = pd.DataFrame(
-        [{"rank": rank + 1, "score": value, "checkpoint": str(path)} for rank, (value, path) in enumerate(saved_top)]
-    )
-    manifest.to_csv(ckpt_dir / "top_checkpoints.csv", index=False)
-    return saved_top
-
-
 def partition_path(args: argparse.Namespace) -> Path:
-    if args.grouping_scheme == "species_partition":
-        if args.species_partition is None:
-            raise ValueError("--species-partition is required for grouping-scheme=species_partition")
-        return args.species_partition
-    return args.genus_k6_partition if args.grouping_scheme == "genus_k6" else args.species_k6_partition
+    """Return the sole supported frozen manuscript partition."""
+    return DEFAULT_MANUSCRIPT_PARTITION
 
 
 def load_partition(path: Path) -> tuple[dict[str, int], list[str]]:
+    """Load a non-object taxon partition and normalize group indices."""
     if not path.exists():
         raise FileNotFoundError(path)
-    data = np.load(path, allow_pickle=True)
-    labels = [str(value) for value in data["label_columns"]]
-    if "label_group" in data.files:
-        groups = np.asarray(data["label_group"], dtype=np.int64)
-    elif "assignments" in data.files:
-        groups = np.asarray(data["assignments"], dtype=np.int64)
-    else:
-        raise KeyError(f"{path} does not contain label_group or assignments.")
+    with np.load(path, allow_pickle=False) as data:
+        labels = [str(value) for value in data["label_columns"]]
+        if "label_group" in data.files:
+            groups = np.asarray(data["label_group"], dtype=np.int64)
+        elif "assignments" in data.files:
+            groups = np.asarray(data["assignments"], dtype=np.int64)
+        else:
+            raise KeyError(f"{path} does not contain label_group or assignments.")
     if len(labels) != len(groups):
         raise RuntimeError(f"{path} has mismatched label/group lengths.")
     group_ids = sorted(int(value) for value in np.unique(groups))
@@ -508,7 +381,8 @@ class LearnedCommonGridInteractionEncoder(clean_disc.train_base.nn.Module):
         naip_patch_pixels: int = 5,
         chm_patch_pixels: int = 3,
         normalization: str = "batch",
-    ):
+    ) -> None:
+        """Create independently learned NAIP and CHM common-grid projections."""
         super().__init__()
         if naip_patch_pixels <= 0 or chm_patch_pixels <= 0:
             raise ValueError("Interaction patch dimensions must be positive.")
@@ -516,7 +390,8 @@ class LearnedCommonGridInteractionEncoder(clean_disc.train_base.nn.Module):
         self.chm_patch_pixels = int(chm_patch_pixels)
         branch_dim = 32
 
-        def norm(channels: int):
+        def norm(channels: int) -> Any:
+            """Construct the requested spatial normalization layer."""
             if normalization == "batch":
                 return clean_disc.train_base.nn.BatchNorm2d(channels)
             if normalization == "group":
@@ -563,6 +438,7 @@ class LearnedCommonGridInteractionEncoder(clean_disc.train_base.nn.Module):
         naip: clean_disc.train_base.torch.Tensor,
         chm: clean_disc.train_base.torch.Tensor,
     ) -> clean_disc.train_base.torch.Tensor:
+        """Encode aligned NAIP and CHM tensors into one interaction vector."""
         if naip.shape[-2] % self.naip_patch_pixels or naip.shape[-1] % self.naip_patch_pixels:
             raise ValueError(
                 f"NAIP interaction shape {tuple(naip.shape[-2:])} is not divisible by "
@@ -596,7 +472,8 @@ class SharedNaipCommonGridEncoder(clean_disc.train_base.nn.Module):
         naip_patch_pixels: int = 5,
         chm_patch_pixels: int = 3,
         normalization: str = "batch",
-    ):
+    ) -> None:
+        """Create a shared NAIP map with independent and interaction heads."""
         super().__init__()
         if naip_patch_pixels <= 0 or chm_patch_pixels <= 0:
             raise ValueError("Interaction patch dimensions must be positive.")
@@ -604,7 +481,8 @@ class SharedNaipCommonGridEncoder(clean_disc.train_base.nn.Module):
         self.chm_patch_pixels = int(chm_patch_pixels)
         branch_dim = 32
 
-        def norm(channels: int):
+        def norm(channels: int) -> Any:
+            """Construct the requested spatial normalization layer."""
             if normalization == "batch":
                 return clean_disc.train_base.nn.BatchNorm2d(channels)
             if normalization == "group":
@@ -662,6 +540,7 @@ class SharedNaipCommonGridEncoder(clean_disc.train_base.nn.Module):
         naip: clean_disc.train_base.torch.Tensor,
         chm: clean_disc.train_base.torch.Tensor,
     ) -> tuple[clean_disc.train_base.torch.Tensor, clean_disc.train_base.torch.Tensor]:
+        """Return independent NAIP and joint NAIP–CHM representations."""
         if naip.shape[-2] % self.naip_patch_pixels or naip.shape[-1] % self.naip_patch_pixels:
             raise ValueError(
                 f"NAIP interaction shape {tuple(naip.shape[-2:])} is not divisible by "
@@ -699,7 +578,8 @@ class MaestroNaipEncoder(clean_disc.train_base.nn.Module):
         revision: str,
         freeze_backbone: bool,
         local_files_only: bool,
-    ):
+    ) -> None:
+        """Load a pinned MAESTRO backbone and add the stage-two projection."""
         super().__init__()
         try:
             from transformers import AutoModel
@@ -744,13 +624,18 @@ class MaestroNaipEncoder(clean_disc.train_base.nn.Module):
             clean_disc.train_base.nn.Dropout(dropout),
         )
 
-    def train(self, mode: bool = True):
+    def train(self, mode: bool = True) -> Any:
+        """Preserve evaluation mode for a frozen pretrained backbone."""
         super().train(mode)
         if self.freeze_backbone:
             self.backbone.eval()
         return self
 
-    def forward(self, image):
+    def forward(
+        self,
+        image: clean_disc.train_base.torch.Tensor,
+    ) -> clean_disc.train_base.torch.Tensor:
+        """Convert stored NAIP channel order and encode one image batch."""
         torch = clean_disc.train_base.torch
         # Stored tree_image is RGB, NIR, NDVI in [0, 1]. MAESTRO expects
         # four reflectance channels ordered NIR, red, green, blue.
@@ -769,6 +654,8 @@ class MaestroNaipEncoder(clean_disc.train_base.nn.Module):
 
 
 class FixedPartitionClassifier(clean_disc.train_base.nn.Module):
+    """Encode modalities, fuse them with learned gates, and classify k11."""
+
     def __init__(
         self,
         class_count: int,
@@ -798,7 +685,8 @@ class FixedPartitionClassifier(clean_disc.train_base.nn.Module):
         interaction_encoder_normalization: str = "batch",
         phenology_zero_indices: list[int] | tuple[int, ...] | None = None,
         excluded_modalities: list[str] | tuple[str, ...] | None = None,
-    ):
+    ) -> None:
+        """Build only the modality branches retained by the configuration."""
         super().__init__()
         self.tree_image_branch_dropout = float(tree_image_branch_dropout)
         self.tree_image_modality_index = 0
@@ -896,7 +784,11 @@ class FixedPartitionClassifier(clean_disc.train_base.nn.Module):
             clean_disc.train_base.nn.Linear(hidden_dim, class_count),
         )
 
-    def encode(self, batch: dict[str, clean_disc.train_base.torch.Tensor]):
+    def encode(
+        self,
+        batch: dict[str, clean_disc.train_base.torch.Tensor],
+    ) -> tuple[clean_disc.train_base.torch.Tensor, clean_disc.train_base.torch.Tensor]:
+        """Return the gated fused representation and modality weights."""
         tree_image = batch["tree_image"]
         tree_chm_image = batch["tree_chm_image"]
         independent_tree_image = tree_image
@@ -962,11 +854,61 @@ class FixedPartitionClassifier(clean_disc.train_base.nn.Module):
         return fused, gates
 
     def forward(self, batch: dict[str, clean_disc.train_base.torch.Tensor]):
+        """Return class logits and sample-specific modality gates."""
         fused, gates = self.encode(batch)
         return self.head(fused), gates
 
 
-def train_epoch(model, loader, optimizer, device, args, ce_weights):
+def build_classifier(
+    args: argparse.Namespace,
+    class_count: int,
+    dimensions: dict[str, int],
+    device: Any,
+    *,
+    inference: bool = False,
+) -> FixedPartitionClassifier:
+    """Construct the configured classifier from compact dimension metadata."""
+    model = FixedPartitionClassifier(
+        class_count=class_count,
+        structure_dim=dimensions["structure"],
+        hidden_dim=int(getattr(args, "hidden_dim", 128)),
+        dropout=float(getattr(args, "dropout", 0.2)),
+        phenology_dim=dimensions["phenology"],
+        raw_sentinel_dim=dimensions["raw_sentinel"],
+        satellite_embedding_dim=dimensions["satellite_embedding"],
+        prism_normals_dim=dimensions["prism_normals"],
+        tree_image_branch_dropout=0.0 if inference else float(getattr(args, "tree_image_branch_dropout", 0.0)),
+        use_naip_chm_interaction_branch=bool(getattr(args, "use_naip_chm_interaction_branch", False)),
+        independent_naip_crop_pixels=int(getattr(args, "image_center_crop_pixels", 0)),
+        interaction_naip_crop_pixels=int(getattr(args, "interaction_naip_crop_pixels", 0)),
+        interaction_fusion_mode=str(getattr(args, "interaction_fusion_mode", "bilinear_upsample")),
+        interaction_naip_patch_pixels=int(getattr(args, "interaction_naip_patch_pixels", 5)),
+        interaction_chm_patch_pixels=int(getattr(args, "interaction_chm_patch_pixels", 3)),
+        image_encoder_normalization=str(getattr(args, "image_encoder_normalization", "batch")),
+        naip_encoder_normalization=getattr(args, "naip_encoder_normalization", None),
+        naip_encoder_architecture=str(getattr(args, "naip_encoder_architecture", "compact_cnn")),
+        maestro_model_id=str(getattr(args, "maestro_model_id", "BiliSakura/MAESTRO-transformers")),
+        maestro_subfolder=str(getattr(args, "maestro_subfolder", "maestro-s2-naip-urban-base")),
+        maestro_revision=str(getattr(args, "maestro_revision", "243b1bc253b72980f1bf6f70354c1f84d958105c")),
+        maestro_freeze_backbone=bool(getattr(args, "maestro_freeze_backbone", True)),
+        maestro_local_files_only=bool(getattr(args, "maestro_local_files_only", False)),
+        chm_encoder_normalization=getattr(args, "chm_encoder_normalization", None),
+        interaction_encoder_normalization=str(getattr(args, "interaction_encoder_normalization", "batch")),
+        phenology_zero_indices=list(getattr(args, "phenology_zero_indices", [])),
+        excluded_modalities=list(getattr(args, "exclude_modality", [])),
+    )
+    return model.to(device)
+
+
+def train_epoch(
+    model: Any,
+    loader: Any,
+    optimizer: Any,
+    device: Any,
+    args: argparse.Namespace,
+    ce_weights: Any,
+) -> dict[str, float]:
+    """Train the classifier for one epoch and return its weighted mean loss."""
     model.train()
     total_loss = 0.0
     total_n = 0
@@ -989,7 +931,16 @@ def train_epoch(model, loader, optimizer, device, args, ce_weights):
 
 
 @clean_disc.train_base.torch.no_grad()
-def evaluate(model, loader, device, class_count: int, group_names: list[str], ce_weights=None, collect: bool = False):
+def evaluate(
+    model: Any,
+    loader: Any,
+    device: Any,
+    class_count: int,
+    group_names: list[str],
+    ce_weights: Any = None,
+    collect: bool = False,
+) -> dict[str, Any]:
+    """Evaluate one checkpoint and optionally retain record-level predictions."""
     model.eval()
     y_true, y_pred, prob_rows = [], [], []
     gate_sum = None
@@ -1058,14 +1009,11 @@ def evaluate(model, loader, device, class_count: int, group_names: list[str], ce
 
 
 def main() -> int:
+    """Train, validate, checkpoint, and independently evaluate the fixed-k11 model."""
     args = parse_args()
+    artifacts.load_grouping_manifest()
     if clean_disc.train_base.TORCH_IMPORT_ERROR is not None:
         raise SystemExit(f"PyTorch is required. Original error: {clean_disc.train_base.TORCH_IMPORT_ERROR}")
-    for label in ("complete_shard_root", "output_dir"):
-        resolved = Path(getattr(args, label)).resolve()
-        if not str(resolved).lower().startswith(str(CLEAN_ROOT).lower()):
-            raise SystemExit(f"{label} must point inside {CLEAN_ROOT}; got {resolved}")
-
     random.seed(args.seed)
     np.random.seed(args.seed)
     clean_disc.train_base.torch.manual_seed(args.seed)
@@ -1077,13 +1025,15 @@ def main() -> int:
     device = clean_disc.train_base.torch.device(args.device)
 
     run_dir = args.output_dir / args.run_name
-    if run_dir.exists() and any(run_dir.iterdir()) and not args.force:
-        raise SystemExit(f"Run directory exists and is not empty: {run_dir}; pass --force.")
+    if run_dir.exists() and any(run_dir.iterdir()) and not args.overwrite:
+        raise SystemExit(f"Run directory exists and is not empty: {run_dir}; pass --overwrite.")
     run_dir.mkdir(parents=True, exist_ok=True)
 
     label_to_group, group_names = load_partition(partition_path(args))
     ensure_shard_pattern(args)
     manifest, paths = clean_disc.discover_shards(args)
+    first_shard_path = next(iter(paths.values()))
+    args.input_schema_sha256 = artifacts.npz_schema_sha256(first_shard_path)
     args.phenology_zero_indices = []
     args.phenology_zero_matched_columns = []
     if args.zero_phenology_feature_regex:
@@ -1091,8 +1041,8 @@ def main() -> int:
             raise SystemExit(
                 "--zero-phenology-feature-regex requires --use-sentinel-phenology."
             )
-        sample_shard_path = next(iter(paths.values()))
-        with np.load(sample_shard_path, allow_pickle=True) as sample_shard:
+        sample_shard_path = first_shard_path
+        with np.load(sample_shard_path, allow_pickle=False) as sample_shard:
             phenology_columns = (
                 [str(value) for value in sample_shard["sentinel_phenology_columns"]]
                 if "sentinel_phenology_columns" in sample_shard.files
@@ -1125,7 +1075,7 @@ def main() -> int:
     manifest = manifest.loc[manifest["fine_label"].isin(label_to_group)].copy()
     dropped = before - len(manifest)
     if dropped:
-        print(f"Dropped records not represented in {args.grouping_scheme} partition: {before:,}->{len(manifest):,}", flush=True)
+        print(f"Dropped records not represented in the fixed partition: {before:,}->{len(manifest):,}", flush=True)
     if not len(manifest):
         raise SystemExit("No records remain after partition label mapping.")
     manifest["label_index"] = manifest["fine_label"].map(label_to_group).astype(np.int64)
@@ -1144,7 +1094,7 @@ def main() -> int:
     manifest["sample_weight"] = clean_disc.compute_sample_weights(manifest, args)
     weights = manifest["sample_weight"].to_numpy(dtype=np.float32)
     print(
-        f"Clean k=6 classifier data before split: rows={len(manifest):,}; cities={manifest['city_token'].nunique():,}; "
+        f"Stage-two k11 classifier data before split: rows={len(manifest):,}; cities={manifest['city_token'].nunique():,}; "
         f"groups={len(group_names)}; sample_weight_mean={weights.mean():.3f}; p05={np.quantile(weights, 0.05):.3f}",
         flush=True,
     )
@@ -1218,7 +1168,7 @@ def main() -> int:
             flush=True,
         )
     print(
-        f"Clean {args.grouping_scheme} classifier split: train={len(train_manifest):,}; "
+        f"Fixed-partition classifier split: train={len(train_manifest):,}; "
         f"val={len(val_manifest):,}; test={len(test_manifest):,}",
         flush=True,
     )
@@ -1239,8 +1189,8 @@ def main() -> int:
         phenology_mean, phenology_std = clean_disc.estimate_array_standardizer(train_manifest, store, "sentinel_phenology", args.phenology_stat_samples, args.seed + 11)
     if args.use_raw_sentinel:
         print("Using raw Sentinel sequence arrays from clean complete shards.", flush=True)
-        sample_shard_path = next(iter(paths.values()))
-        with np.load(sample_shard_path, allow_pickle=True) as sample_shard:
+        sample_shard_path = first_shard_path
+        with np.load(sample_shard_path, allow_pickle=False) as sample_shard:
             sentinel_feature_columns = (
                 [str(value) for value in sample_shard["sentinel_feature_columns"]]
                 if "sentinel_feature_columns" in sample_shard.files
@@ -1286,35 +1236,14 @@ def main() -> int:
     val_loader = clean_disc.make_loader(val_ds, args, train=False)
     test_loader = clean_disc.make_loader(test_ds, args, train=False)
 
-    model = FixedPartitionClassifier(
-        class_count=len(group_names),
-        structure_dim=int(structure_mean.shape[0]),
-        hidden_dim=args.hidden_dim,
-        dropout=args.dropout,
-        phenology_dim=0 if phenology_mean is None else int(phenology_mean.shape[0]),
-        raw_sentinel_dim=0 if raw_sentinel_mean is None else int(raw_sentinel_mean.shape[0]),
-        satellite_embedding_dim=0 if satellite_embedding_mean is None else int(satellite_embedding_mean.shape[0]),
-        prism_normals_dim=0 if prism_mean is None else int(prism_mean.shape[0]),
-        tree_image_branch_dropout=args.tree_image_branch_dropout,
-        use_naip_chm_interaction_branch=args.use_naip_chm_interaction_branch,
-        independent_naip_crop_pixels=args.image_center_crop_pixels,
-        interaction_naip_crop_pixels=args.interaction_naip_crop_pixels,
-        interaction_fusion_mode=args.interaction_fusion_mode,
-        interaction_naip_patch_pixels=args.interaction_naip_patch_pixels,
-        interaction_chm_patch_pixels=args.interaction_chm_patch_pixels,
-        image_encoder_normalization=args.image_encoder_normalization,
-        naip_encoder_normalization=args.naip_encoder_normalization,
-        naip_encoder_architecture=args.naip_encoder_architecture,
-        maestro_model_id=args.maestro_model_id,
-        maestro_subfolder=args.maestro_subfolder,
-        maestro_revision=args.maestro_revision,
-        maestro_freeze_backbone=args.maestro_freeze_backbone,
-        maestro_local_files_only=args.maestro_local_files_only,
-        chm_encoder_normalization=args.chm_encoder_normalization,
-        interaction_encoder_normalization=args.interaction_encoder_normalization,
-        phenology_zero_indices=args.phenology_zero_indices,
-        excluded_modalities=args.exclude_modality,
-    ).to(device)
+    dimensions = {
+        "structure": int(structure_mean.shape[0]),
+        "phenology": 0 if phenology_mean is None else int(phenology_mean.shape[0]),
+        "raw_sentinel": 0 if raw_sentinel_mean is None else int(raw_sentinel_mean.shape[0]),
+        "satellite_embedding": 0 if satellite_embedding_mean is None else int(satellite_embedding_mean.shape[0]),
+        "prism_normals": 0 if prism_mean is None else int(prism_mean.shape[0]),
+    }
+    model = build_classifier(args, len(group_names), dimensions, device)
     if args.use_naip_chm_interaction_branch:
         shared_text = (
             "shared NAIP common-grid map feeds independent and interaction heads"
@@ -1357,6 +1286,7 @@ def main() -> int:
         merged_state = {key: value for key, value in target_state.items()}
 
         def merge_checkpoint(path: Path, label: str, allowed_prefix: str | None = None) -> None:
+            """Copy shape-compatible parameters from one initialization checkpoint."""
             checkpoint = clean_disc.train_base.torch.load(path, map_location=device)
             source_state = checkpoint["model_state_dict"]
             loaded = 0
@@ -1406,27 +1336,37 @@ def main() -> int:
     for epoch in range(1, args.epochs + 1):
         train_metrics = train_epoch(model, train_loader, optimizer, device, args, ce_weights)
         val_metrics = evaluate(model, val_loader, device, len(group_names), group_names, ce_weights=ce_weights, collect=False)
-        score = selection_score(val_metrics, args)
-        payload = checkpoint_payload(
+        score = checkpointing.selection_score(val_metrics, args)
+        standardizers = {
+            "structure_mean": structure_mean,
+            "structure_std": structure_std,
+            "phenology_mean": phenology_mean,
+            "phenology_std": phenology_std,
+            "raw_sentinel_mean": raw_sentinel_mean,
+            "raw_sentinel_std": raw_sentinel_std,
+            "satellite_embedding_mean": satellite_embedding_mean,
+            "satellite_embedding_std": satellite_embedding_std,
+            "prism_mean": prism_mean,
+            "prism_std": prism_std,
+        }
+        payload = checkpointing.checkpoint_payload(
             model,
             group_names,
             label_to_group,
-            structure_mean,
-            structure_std,
-            phenology_mean,
-            phenology_std,
-            raw_sentinel_mean,
-            raw_sentinel_std,
-            satellite_embedding_mean,
-            satellite_embedding_std,
-            prism_mean,
-            prism_std,
+            standardizers,
             args,
             epoch,
             val_metrics,
             score,
+            clean_disc.train_base.torch,
         )
-        saved_top = save_top_k_checkpoint(payload, run_dir, args.save_top_k_checkpoints, saved_top)
+        saved_top = checkpointing.save_top_k_checkpoint(
+            payload,
+            run_dir,
+            args.save_top_k_checkpoints,
+            saved_top,
+            clean_disc.train_base.torch,
+        )
         improved = score > best_score + float(args.early_stopping_min_delta)
         if improved:
             best_score = score
@@ -1477,13 +1417,13 @@ def main() -> int:
             city_token=validation_metrics["city_token"],
             tree_id=validation_metrics["tree_id"],
             crop_index=validation_metrics["crop_index"],
-            group_names=np.asarray(group_names, dtype=object),
-            modality_names=np.asarray(model.modality_names, dtype=object),
+            group_names=np.asarray(group_names, dtype="<U64"),
+            modality_names=np.asarray(model.modality_names, dtype="<U64"),
         )
         print(f"Saved validation predictions: {run_dir / 'validation_predictions.npz'}", flush=True)
     if args.validation_only_pilot:
         summary = {
-            "grouping_scheme": args.grouping_scheme,
+            "label_space": "fixed_k11",
             "partition_path": str(partition_path(args)),
             "validation_only_pilot": True,
             "test_evaluation_performed": False,
@@ -1492,6 +1432,7 @@ def main() -> int:
             "best_val_score": best_score,
             "best_val_macro_f1": best_macro,
             "group_names": group_names,
+            "provenance": artifacts.provenance(args.split_manifest, args.input_schema_sha256),
             "args": clean_disc.safe_json_args(args),
         }
         (run_dir / "run_config.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -1505,7 +1446,7 @@ def main() -> int:
     test_metrics = evaluate(model, test_loader, device, len(group_names), group_names, ce_weights=ce_weights, collect=args.export_predictions)
     pd.DataFrame(test_metrics["per_class"]).to_csv(run_dir / "test_per_group_metrics.csv", index=False)
     summary = {
-        "grouping_scheme": args.grouping_scheme,
+        "label_space": "fixed_k11",
         "partition_path": str(partition_path(args)),
         "best_epoch": best_epoch,
         "checkpoint_selection_score": args.checkpoint_selection_score,
@@ -1515,6 +1456,7 @@ def main() -> int:
         "test_macro_f1": test_metrics["macro_f1"],
         "test_weighted_f1": test_metrics["weighted_f1"],
         "group_names": group_names,
+        "provenance": artifacts.provenance(args.split_manifest, args.input_schema_sha256),
         "args": clean_disc.safe_json_args(args),
     }
     (run_dir / "run_config.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -1530,7 +1472,7 @@ def main() -> int:
             group_names=np.asarray(group_names, dtype="<U64"),
         )
     print(
-        f"Finished clean {args.grouping_scheme} classifier: best_epoch={best_epoch}; "
+        f"Finished fixed-k11 classifier: best_epoch={best_epoch}; "
         f"test_acc={test_metrics['accuracy']:.3f}; test_macro_f1={test_metrics['macro_f1']:.3f}; "
         f"test_weighted_f1={test_metrics['weighted_f1']:.3f}",
         flush=True,

@@ -42,11 +42,6 @@ def parse_args() -> argparse.Namespace:
         required=True,
     )
     parser.add_argument(
-        "--partition",
-        type=Path,
-        default=Path("config/final_k11_partition.npz"),
-    )
-    parser.add_argument(
         "--split-manifest",
         type=Path,
         required=True,
@@ -83,18 +78,15 @@ def main() -> int:
             "--prepared-mmap-root", str(args.prepared_mmap_root),
             "--output-dir", str(args.output_root),
             "--run-name", modality,
-            "--grouping-scheme", "species_partition",
-            "--species-partition", str(args.partition),
             "--split-manifest", str(args.split_manifest),
             "--split", "test",
-            "--collapse-map", canonical_collapse_map(),
             "--batch-size", str(args.batch_size),
             "--num-workers", str(args.num_workers),
             "--device", "cuda",
             "--export-predictions",
         ]
         if args.overwrite:
-            command.append("--force")
+            command.append("--overwrite")
         print(f"[{index}/{len(MODELS)}] {modality}: starting", flush=True)
         subprocess.run(command, check=True)
         print(f"[{index}/{len(MODELS)}] {modality}: complete", flush=True)
