@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 
-def normalize_rows(values):
+def normalize_rows(values: np.ndarray) -> np.ndarray:
     values = np.asarray(values, dtype=np.float32)
     norms = np.linalg.norm(values, axis=1, keepdims=True)
     return np.divide(values, norms, out=np.zeros_like(values), where=norms > 1e-12)
@@ -26,24 +26,26 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def main():
+def main() -> None:
+    config_dir = Path(__file__).resolve().parents[2] / "config"
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--validation-embeddings", type=Path, required=True)
     parser.add_argument("--rare-embeddings", type=Path, required=True)
-    parser.add_argument("--core-partition", type=Path, required=True)
+    parser.add_argument("--core-partition", type=Path, default=config_dir / "core_k11_partition.npz")
+    parser.add_argument("--core-prototypes", type=Path, default=config_dir / "core_k11_group_prototypes.npz")
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     out = args.output_dir.resolve()
-    if out.exists() and any(out.iterdir()) and not args.force:
+    if out.exists() and any(out.iterdir()) and not args.overwrite:
         raise SystemExit(f"Output directory is not empty: {out}")
     out.mkdir(parents=True, exist_ok=True)
 
-    with np.load(args.validation_embeddings, allow_pickle=True) as data:
+    with np.load(args.validation_embeddings, allow_pickle=False) as data:
         embeddings = normalize_rows(data["embeddings"])
         labels = np.asarray(data["labels" if "labels" in data.files else "label_index"], dtype=int)
         core_taxa = data["label_columns"].astype(str)
-    with np.load(args.core_partition, allow_pickle=True) as data:
+    with np.load(args.core_partition, allow_pickle=False) as data:
         partition_taxa = data["label_columns"].astype(str)
         core_assignment = np.asarray(data["assignments"], dtype=int)
     if not np.array_equal(core_taxa, partition_taxa):
@@ -53,13 +55,12 @@ def main():
     core_centroids = normalize_rows(np.stack([
         embeddings[labels == index].mean(axis=0) for index in range(len(core_taxa))
     ]))
-    prototypes = normalize_rows(np.stack([
-        np.average(core_centroids[core_assignment == group], axis=0,
-                   weights=np.sqrt(core_counts[core_assignment == group].astype(float)))
-        for group in range(group_count)
-    ]))
+    with np.load(args.core_prototypes, allow_pickle=False) as data:
+        prototypes = normalize_rows(np.asarray(data["group_centroids"], dtype=np.float32))
+        if not np.array_equal(np.asarray(data["assignments"], dtype=int), core_assignment):
+            raise RuntimeError("Core prototype assignments differ from the frozen core partition")
 
-    with np.load(args.rare_embeddings, allow_pickle=True) as data:
+    with np.load(args.rare_embeddings, allow_pickle=False) as data:
         rare_embeddings = normalize_rows(data["embeddings"])
         rare_taxon_per_record = data["taxon"].astype(str)
         rare_split = data["rare_split"].astype(str)
@@ -84,14 +85,13 @@ def main():
 
     extended_taxa = np.concatenate([core_taxa, rare_taxa])
     extended_assignment = np.concatenate([core_assignment, rare_assignment])
-    output_path = out / f"frozen_k{group_count}_expanded_ge50_partition.npz"
+    output_path = out / "final_k11_partition.npz"
     np.savez_compressed(
         output_path, assignments=extended_assignment, label_columns=extended_taxa,
-        group_centroids=prototypes, validation_counts=np.concatenate([core_counts, np.zeros(len(rare_taxa), dtype=int)]),
+        group_centroids=prototypes,
         core_validation_counts=core_counts, rare_development_counts=development_counts,
         rare_test_counts=test_counts, core_taxon_count=np.asarray([len(core_taxa)]),
         rare_extension_taxon_count=np.asarray([len(rare_taxa)]),
-        is_extension_taxon=np.concatenate([np.zeros(len(core_taxa), dtype=bool), np.ones(len(rare_taxa), dtype=bool)]),
     )
     pd.DataFrame({
         "taxon": rare_taxa, "assigned_group": rare_assignment + 1,
@@ -120,6 +120,7 @@ def main():
         "rare_assignment_method": "nearest cosine group prototype from development-only rare-taxon centroid",
         "assignment_margin_median": float(np.median(margin)), "assignment_margin_minimum": float(margin.min()),
         "core_partition_sha256": sha256(args.core_partition),
+        "core_prototypes_sha256": sha256(args.core_prototypes),
         "validation_embeddings_sha256": sha256(args.validation_embeddings),
         "rare_embeddings_sha256": sha256(args.rare_embeddings),
         "output_partition": str(output_path),

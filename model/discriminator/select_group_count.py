@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Build and compare k=5--12 taxon groups from discriminator embeddings.
+"""Select the initial group count using validation embeddings only.
 
 The discriminator embeds every tree on the unit hypersphere. This script
 computes one normalized centroid per fine taxon, clusters those centroids with
-sample-count-weighted k-means, and evaluates the resulting collapsed classes
-with an Oracle nearest-group-prototype classifier. The selected partition is
-the one with the strongest centroid separability objective, not necessarily
-the partition with the fewest classes or highest raw accuracy.
+sample-count-weighted k-means, and evaluates the resulting classes using only
+validation embeddings. The selected partition is the one with the strongest
+centroid-separability objective, not necessarily the partition with the fewest
+classes or highest validation accuracy.
 
 The emitted ``kNN_partition.npz`` files implement the exact contract consumed
 by ``model/stage2/train_fixed_partition_classifier.py``.
@@ -23,23 +23,10 @@ from typing import Any
 import numpy as np
 
 
-DEFAULT_RUN_DIR = Path(
-    r"H:\TreeCenteredModelInputs\taxon_discrimination_clean\clean_abq_atl_taxon_discriminator"
-)
-DEFAULT_OUTPUT_NAME = "global_centroid_taxon_partitions_clean_exploratory"
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--run-dir", type=Path, default=DEFAULT_RUN_DIR)
-    parser.add_argument("--validation-embeddings", type=Path, default=None)
-    parser.add_argument("--test-embeddings", type=Path, default=None)
-    parser.add_argument(
-        "--validation-only",
-        action="store_true",
-        help="Fit and compare partitions without loading or evaluating the test embeddings.",
-    )
-    parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument("--validation-embeddings", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--min-groups", type=int, default=5)
     parser.add_argument("--max-groups", type=int, default=12)
     parser.add_argument("--n-init", type=int, default=200)
@@ -53,7 +40,7 @@ def parse_args() -> argparse.Namespace:
         default="numpy",
         help="Use sklearn for exact manuscript-era reproduction or numpy for the platform-safe equivalent.",
     )
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
 
@@ -66,7 +53,7 @@ def normalize_rows(values: np.ndarray) -> np.ndarray:
 def load_embeddings(path: Path) -> dict[str, np.ndarray]:
     if not path.exists():
         raise FileNotFoundError(path)
-    with np.load(path, allow_pickle=True) as data:
+    with np.load(path, allow_pickle=False) as data:
         required = {"embeddings", "label_columns"}
         missing = sorted(required.difference(data.files))
         if missing:
@@ -79,16 +66,6 @@ def load_embeddings(path: Path) -> dict[str, np.ndarray]:
             "labels": np.asarray(data[label_key], dtype=np.int64),
             "label_columns": np.asarray(data["label_columns"]).astype(str),
         }
-
-
-def validate_splits(validation: dict[str, np.ndarray], test: dict[str, np.ndarray]) -> None:
-    if not np.array_equal(validation["label_columns"], test["label_columns"]):
-        raise RuntimeError("Validation and test label_columns differ.")
-    count = len(validation["label_columns"])
-    for name, split in (("validation", validation), ("test", test)):
-        labels = split["labels"]
-        if labels.size and (labels.min() < 0 or labels.max() >= count):
-            raise RuntimeError(f"{name} contains label indices outside [0, {count}).")
 
 
 def taxon_centroids(
@@ -299,21 +276,12 @@ def main() -> int:
     args = parse_args()
     if args.min_groups < 2 or args.max_groups < args.min_groups:
         raise SystemExit("Require 2 <= --min-groups <= --max-groups.")
-    validation_path = args.validation_embeddings or args.run_dir / "val_embeddings.npz"
-    test_path = None if args.validation_only else (args.test_embeddings or args.run_dir / "test_embeddings.npz")
-    output_dir = args.output_dir or args.run_dir / DEFAULT_OUTPUT_NAME
-    if output_dir.exists() and any(output_dir.iterdir()) and not args.force:
-        raise SystemExit(f"Output directory is not empty (use --force): {output_dir}")
+    validation_path = args.validation_embeddings
+    output_dir = args.output_dir
+    if output_dir.exists() and any(output_dir.iterdir()) and not args.overwrite:
+        raise SystemExit(f"Output directory is not empty (use --overwrite): {output_dir}")
     validation = load_embeddings(validation_path)
-    test = None if test_path is None else load_embeddings(test_path)
-    if test is not None:
-        validate_splits(validation, test)
     kept_indices, centroids, validation_counts = taxon_centroids(validation, args.min_class_validation_samples)
-    test_counts = (
-        np.zeros(len(validation["label_columns"]), dtype=np.int64)
-        if test is None
-        else np.bincount(test["labels"], minlength=len(validation["label_columns"])).astype(np.int64)
-    )
     weights = validation_counts[kept_indices].astype(np.float64) ** float(args.weight_power)
     labels = validation["label_columns"]
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -324,9 +292,6 @@ def main() -> int:
         full_assignments = np.full(len(labels), -1, dtype=np.int64)
         full_assignments[kept_indices] = kept_assignments
         val_metrics, _val_rows, _val_confusion = group_metrics(validation, full_assignments, prototypes)
-        test_metrics = test_rows = test_confusion = None
-        if test is not None:
-            test_metrics, test_rows, test_confusion = group_metrics(test, full_assignments, prototypes)
         separation = separability_metrics(centroids, kept_assignments, prototypes, weights)
         row = {
             "group_count": groups,
@@ -337,7 +302,6 @@ def main() -> int:
             "search_proxy_weighted_f1": val_metrics["weighted_f1"],
             "search_proxy_min_group_f1": val_metrics["min_group_f1"],
             **separation,
-            **({f"test_{key}": value for key, value in test_metrics.items()} if test_metrics is not None else {}),
         }
         summary_rows.append(row)
         np.savez_compressed(
@@ -346,7 +310,6 @@ def main() -> int:
             group_centroids=prototypes,
             label_columns=labels,
             val_counts=validation_counts,
-            test_counts=test_counts,
             prism_normals_enabled=np.asarray([False]),
             prism_normals_weight=np.asarray([0.0]),
         )
@@ -363,13 +326,6 @@ def main() -> int:
                 }
             )
         write_csv(output_dir / f"k{groups:02d}_group_composition.csv", composition)
-        if test is not None:
-            write_csv(output_dir / f"k{groups:02d}_test_group_metrics.csv", test_rows)
-            confusion_rows = [
-                {"true_group": f"group{i + 1:02d}", **{f"pred_group{j + 1:02d}": float(test_confusion[i, j] / max(test_confusion[i].sum(), 1) * 100.0) for j in range(groups)}}
-                for i in range(groups)
-            ]
-            write_csv(output_dir / f"k{groups:02d}_test_confusion_percent.csv", confusion_rows)
         print(
             f"k={groups:02d}: validation_macro_f1={val_metrics['macro_f1']:.6f}; "
             f"weighted_silhouette={separation['weighted_silhouette']:.6f}; objective={separation['objective']:.6f}",
@@ -380,15 +336,14 @@ def main() -> int:
     write_csv(output_dir / "partition_summary.csv", summary_rows)
     best = summary_rows[0]
     summary = {
-        "run_dir": str(args.run_dir),
         "validation_embeddings": str(validation_path),
-        "test_embeddings": None if test_path is None else str(test_path),
         "label_count": int(len(kept_indices)),
         "objective": "separability",
         "best_group_count": int(best["group_count"]),
         "best_objective": float(best["objective"]),
         "args": {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()},
-        "note": "Oracle metrics assign each embedding to its nearest normalized group-centroid prototype.",
+        "test_data_used_for_group_selection": False,
+        "note": "All selection metrics use validation embeddings only. Independent test evaluation is a separate workflow.",
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"Best separability: k={int(best['group_count'])}; objective={float(best['objective']):.10f}", flush=True)

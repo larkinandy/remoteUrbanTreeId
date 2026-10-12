@@ -42,16 +42,17 @@ def main():
     parser.add_argument("--replicates", type=int, default=500)
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--progress-every", type=int, default=50)
+    parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     if args.groups < 2:
         raise SystemExit("--groups must be at least 2")
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
-    if any(out.iterdir()):
-        raise SystemExit(f"Refusing to overwrite nonempty directory: {out}")
+    if any(out.iterdir()) and not args.overwrite:
+        raise SystemExit(f"Refusing to overwrite nonempty directory without --overwrite: {out}")
 
     started = time.perf_counter()
-    with np.load(args.validation, allow_pickle=True) as data:
+    with np.load(args.validation, allow_pickle=False) as data:
         embeddings = norm(data["embeddings"])
         labels = data["labels"].astype(int)
         taxa = data["label_columns"].astype(str)

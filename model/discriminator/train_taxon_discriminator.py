@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Train a clean tree_id-centered taxon discriminator from complete shards.
+"""Train the tree-centered taxon discriminator from complete model shards.
 
-This script is intentionally standalone for the clean H:\\TreeCenteredModelInputs
-pipeline. It does not import the previous discriminator trainer and it does not
-try to infer row alignment from old cell-centered IDs.
+The script is portable: data and output locations must be supplied explicitly.
+The final manuscript configuration is stored in ``final_discriminator_config.json``.
 
 Clean shard contract:
   * each ``*_inputs.npz`` is a compact table of already-screened records
@@ -35,16 +34,19 @@ from model_components import PhenologyEncoder
 import model_components as train_base
 
 
-CLEAN_ROOT = Path(r"H:\TreeCenteredModelInputs")
-DEFAULT_SHARD_ROOT = CLEAN_ROOT / "tree_centered_complete_sharded100k_clean"
-DEFAULT_OUTPUT_DIR = CLEAN_ROOT / "taxon_discrimination_clean"
-
-
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--complete-shard-root", type=Path, default=DEFAULT_SHARD_ROOT)
+    config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--config", type=Path)
+    config_args, _ = config_parser.parse_known_args()
+    configured: dict[str, Any] = {}
+    if config_args.config is not None:
+        configured = json.loads(config_args.config.read_text(encoding="utf-8"))
+        configured = configured.get("training_arguments", configured)
+
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter, parents=[config_parser])
+    parser.add_argument("--complete-shard-root", type=Path, required="complete_shard_root" not in configured)
     parser.add_argument("--complete-shard-pattern", default="*_part*_tree_centered_complete_inputs.npz")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--output-dir", type=Path, required="output_dir" not in configured)
     parser.add_argument("--run-name", default="clean_tree_id_taxon_discriminator_full_context")
     parser.add_argument("--city-token", action="append", default=None)
     parser.add_argument("--exclude-city-token", action="append", default=[])
@@ -195,7 +197,8 @@ def parse_args() -> argparse.Namespace:
         action=argparse.BooleanOptionalAction,
         default=False,
     )
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--overwrite", action="store_true", help="Allow reuse of a non-empty run directory.")
+    parser.set_defaults(**configured)
     return parser.parse_args()
 
 
@@ -1131,10 +1134,6 @@ def safe_json_args(args: argparse.Namespace) -> dict[str, Any]:
 
 def main() -> int:
     args = parse_args()
-    for label in ("complete_shard_root", "output_dir"):
-        resolved = Path(getattr(args, label)).resolve()
-        if not str(resolved).lower().startswith(str(CLEAN_ROOT).lower()):
-            raise SystemExit(f"{label} must point inside {CLEAN_ROOT}; got {resolved}")
     if train_base.TORCH_IMPORT_ERROR is not None:
         raise SystemExit(f"PyTorch is required. Original error: {train_base.TORCH_IMPORT_ERROR}")
     random.seed(args.seed)
@@ -1147,8 +1146,8 @@ def main() -> int:
         )
     device = train_base.torch.device(args.device)
     run_dir = args.output_dir / args.run_name
-    if run_dir.exists() and any(run_dir.iterdir()) and not args.force:
-        raise SystemExit(f"Run directory exists and is not empty: {run_dir}; pass --force.")
+    if run_dir.exists() and any(run_dir.iterdir()) and not args.overwrite:
+        raise SystemExit(f"Run directory exists and is not empty: {run_dir}; pass --overwrite.")
     run_dir.mkdir(parents=True, exist_ok=True)
 
     manifest, paths = discover_shards(args)
@@ -1477,9 +1476,9 @@ def main() -> int:
             crop_index=val_export_metrics["crop_index"],
             label_columns=np.asarray(
                 [label for label, _idx in sorted(label_to_index.items(), key=lambda kv: kv[1])],
-                dtype=object,
+                dtype=str,
             ),
-            modality_names=np.asarray(model.modality_names, dtype=object),
+            modality_names=np.asarray(model.modality_names, dtype=str),
         )
         print(f"Saved validation embeddings: {run_dir / 'val_embeddings.npz'}", flush=True)
 
@@ -1508,8 +1507,8 @@ def main() -> int:
             city_token=test_metrics["city_token"],
             tree_id=test_metrics["tree_id"],
             crop_index=test_metrics["crop_index"],
-            label_columns=np.asarray([label for label, _idx in sorted(label_to_index.items(), key=lambda kv: kv[1])], dtype=object),
-            modality_names=np.asarray(model.modality_names, dtype=object),
+            label_columns=np.asarray([label for label, _idx in sorted(label_to_index.items(), key=lambda kv: kv[1])], dtype=str),
+            modality_names=np.asarray(model.modality_names, dtype=str),
         )
     print(
         f"Finished clean discriminator: best_epoch={best_epoch}; best_val_macro_f1={best_macro:.3f}; "

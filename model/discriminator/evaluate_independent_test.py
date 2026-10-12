@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Evaluate frozen discriminator groupings on independent test embeddings."""
 
 from __future__ import annotations
@@ -15,16 +15,18 @@ from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precisio
 
 def parse_args() -> argparse.Namespace:
     config_dir = Path(__file__).resolve().parents[2] / "config"
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument(
         "--validation-embeddings",
         type=Path,
-        default=Path(r"H:\TreeCenteredModelInputs\taxon_discrimination_clean\reviewer_revision_groupnorm_interaction_scratch_v1\revised_groupnorm_interaction_discriminator_scratch\val_embeddings.npz"),
+        required=True,
+        help="Validation embeddings used to construct the frozen partition and prototypes.",
     )
     p.add_argument(
         "--test-embeddings",
         type=Path,
-        default=Path("outputs/reviewer_revision/independent_discriminator_test_evaluation/test_embeddings.npz"),
+        required=True,
+        help="Independent test embeddings; never used to select group count or assignments.",
     )
     p.add_argument(
         "--k11-partition",
@@ -44,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("outputs/reviewer_revision/independent_discriminator_test_evaluation"),
+        required=True,
     )
     return p.parse_args()
 
@@ -128,7 +130,7 @@ def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    with np.load(args.validation_embeddings, allow_pickle=True) as val, np.load(args.test_embeddings, allow_pickle=True) as test:
+    with np.load(args.validation_embeddings, allow_pickle=False) as val, np.load(args.test_embeddings, allow_pickle=False) as test:
         val_labels = np.asarray(val["label_columns"], dtype=str)
         test_labels = np.asarray(test["label_columns"], dtype=str)
         if not np.array_equal(val_labels, test_labels):
@@ -141,19 +143,19 @@ def main() -> None:
         test_tree = np.asarray(test["tree_id"], dtype=np.int64)
         test_crop = np.asarray(test["crop_index"], dtype=np.int64)
 
-    with np.load(args.k11_partition, allow_pickle=True) as part:
+    with np.load(args.k11_partition, allow_pickle=False) as part:
         if not np.array_equal(np.asarray(part["label_columns"], dtype=str), val_labels):
             raise ValueError("k=11 partition taxon order differs from embedding labels")
         assignment_k11 = np.asarray(part["assignments"], dtype=np.int64)
         validation_counts = np.asarray(part["validation_counts"], dtype=np.int64)
         taxon_centroids = np.asarray(part["full_validation_centroids"], dtype=np.float64)
 
-    with np.load(args.k11_prototypes, allow_pickle=True) as proto:
+    with np.load(args.k11_prototypes, allow_pickle=False) as proto:
         prototypes_k11 = normalize_rows(proto["group_centroids"])
         if not np.array_equal(np.asarray(proto["assignments"], dtype=np.int64), assignment_k11):
             raise ValueError("Stored k=11 prototypes do not match the frozen partition")
 
-    with np.load(args.collapse, allow_pickle=True) as collapsed:
+    with np.load(args.collapse, allow_pickle=False) as collapsed:
         k11_to_k6 = np.asarray(collapsed["initial_group_assignment"], dtype=np.int64)
     if len(k11_to_k6) != 11 or set(k11_to_k6.tolist()) != set(range(6)):
         raise ValueError("Expected a complete zero-based 11-to-6 mapping")
