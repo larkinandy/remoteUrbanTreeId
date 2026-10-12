@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create portable, city-level summaries of frozen crown products."""
+"""Summarize frozen crown-center detections and inventory matches."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from tree_crown_common import normalize_city_token
 
 
 def parse_args() -> argparse.Namespace:
@@ -33,7 +35,7 @@ def numeric_summary(frame: pd.DataFrame, column: str, prefix: str) -> dict[str, 
 
 
 def summarize_city(crown_path: Path, match_root: Path) -> dict[str, object]:
-    city = crown_path.name.removesuffix("_tree_centers.csv")
+    city = normalize_city_token(crown_path.name.removesuffix("_tree_centers.csv"))
     crowns = pd.read_csv(crown_path, low_memory=False)
     matches = sorted((match_root / city).glob(f"{city}_tree_to_nearest_detected_crown_*m.csv"))
     row: dict[str, object] = {

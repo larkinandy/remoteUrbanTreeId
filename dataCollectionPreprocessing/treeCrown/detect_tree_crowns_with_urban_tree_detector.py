@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""Detect tree centers in indexed NAIP chip stacks using UrbanTreeDetector.
+"""Detect crown-center points in indexed NAIP chips using UrbanTreeDetector.
 
-This is the crown-detection workflow used to create the study's
-``<city>_tree_centers.csv`` files. It applies SFANet to four-band NAIP chips,
-extracts confidence-map peaks, and joins each peak to the companion chip index.
-The detector implementation and weights are supplied explicitly so this
-repository does not silently depend on a mutable external checkout.
+This workflow detects likely tree centers from an SFANet confidence surface. It
+does not segment or delineate individual crown polygons.
 """
 
 from __future__ import annotations
@@ -21,6 +18,7 @@ import pandas as pd
 import yaml
 
 from tree_crown_inference_utils import attach_index_metadata, extract_peaks, normalize_chip_shape, predict_batches
+from tree_crown_common import normalize_city_token
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,10 +60,10 @@ def build_model(detector_repo: Path, model_dir: Path, input_shape: tuple[int, in
 
 def discover_jobs(root: Path, selected: list[str]) -> list[tuple[str, Path, Path]]:
     """Find one chip stack and index table for each selected city."""
-    requested = {token.strip().lower() for token in selected}
+    requested = {normalize_city_token(token) for token in selected if normalize_city_token(token)}
     jobs: list[tuple[str, Path, Path]] = []
     for city_dir in sorted(path for path in root.iterdir() if path.is_dir()):
-        city = city_dir.name.lower()
+        city = normalize_city_token(city_dir.name)
         if requested and city not in requested:
             continue
         chips, indexes = sorted(city_dir.glob("*_chips.npy")), sorted(city_dir.glob("*_index.csv"))

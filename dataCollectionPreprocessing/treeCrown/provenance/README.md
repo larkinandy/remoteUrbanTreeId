@@ -11,3 +11,7 @@ names so the table remains portable.
 
 The external model weights are not redistributed. Download them from the URL in
 the configuration and verify the SHA-256 checksum before inference.
+
+Use `../validate_tree_crown_products.py` to verify regenerated crown and match
+products against the counts in `tree_crown_city_summary.csv`. Validation reports
+store only city tokens and relative filenames, not workstation paths.
