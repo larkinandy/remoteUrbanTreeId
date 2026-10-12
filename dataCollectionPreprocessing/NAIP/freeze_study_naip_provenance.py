@@ -68,7 +68,7 @@ def main() -> int:
                     raster = source_name(row.get("crop_source_sid", ""))
                     bands = ",".join(row.get(name, "") for name in ("crop_red_band", "crop_green_band", "crop_blue_band", "crop_nir_band"))
                     if raster:
-                        year_match = re.search(r"_(20\d{2})(?:_|\.)", raster)
+                        year_match = re.search(r"(?:^|\D)(20\d{2})(?:\D|$)", raster)
                         raster_counts[(city, source_type, raster, bands, year_match.group(1) if year_match else "")] += 1
                         match = re.search(r"_s_([a-z]{2})(\d{3})_", raster, re.I)
                         if match:
@@ -77,13 +77,13 @@ def main() -> int:
                     rgb = source_name(row.get("crop_natural_sid", "") or row.get("crop_source_rgb_sid", "") or row.get("crop_source_natural_sid", ""))
                     nir = source_name(row.get("crop_companion_sid", "") or row.get("crop_source_nir_sid", "") or row.get("crop_source_companion_sid", ""))
                     if rgb:
-                        year_match = re.search(r"_(20\d{2})(?:_|\.)", rgb)
+                        year_match = re.search(r"(?:^|\D)(20\d{2})(?:\D|$)", rgb)
                         raster_counts[(city, "paired_natural", rgb, "1,2,3", year_match.group(1) if year_match else "")] += 1
                         match = re.search(r"_s_([a-z]{2})(\d{3})_", rgb, re.I)
                         if match:
                             city_counties[city].add((match.group(1).upper(), match.group(2)))
                     if nir:
-                        year_match = re.search(r"_(20\d{2})(?:_|\.)", nir)
+                        year_match = re.search(r"(?:^|\D)(20\d{2})(?:\D|$)", nir)
                         raster_counts[(city, "paired_companion", nir, "1", year_match.group(1) if year_match else "")] += 1
 
     city_fields = ["city_token", "source_format", "crop_size_pixels", "crop_footprint_metres", "selection_mode", "record_count", "failed_count"]
@@ -97,6 +97,35 @@ def main() -> int:
         writer.writerow(["city_token", "source_role", "source_raster_filename", "acquisition_year", "bands_one_based", "selected_record_count"])
         for (city, role, raster, bands, year), count in sorted(raster_counts.items()):
             writer.writerow([city, role, raster, year, bands, count])
+
+    summary_fields = [
+        "city_token", "source_format", "acquisition_year_min", "acquisition_year_max",
+        "unique_source_rasters", "natural_or_multiband_rasters", "companion_rasters",
+        "records_submitted_for_cropping", "successful_crops", "failed_crops", "crop_success_percent",
+    ]
+    with (args.output_dir / "frozen_study_naip_city_summary.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=summary_fields)
+        writer.writeheader()
+        for row in sorted(city_rows, key=lambda item: str(item["city_token"])):
+            city = str(row["city_token"])
+            sources = [(role, raster, year) for (source_city, role, raster, _bands, year) in raster_counts if source_city == city]
+            years = sorted(int(year) for _role, _raster, year in sources if year)
+            submitted = int(row["record_count"] or 0)
+            failed = int(row["failed_count"] or 0)
+            successful = submitted - failed
+            writer.writerow({
+                "city_token": city,
+                "source_format": row["source_format"],
+                "acquisition_year_min": min(years) if years else "",
+                "acquisition_year_max": max(years) if years else "",
+                "unique_source_rasters": len({raster for _role, raster, _year in sources}),
+                "natural_or_multiband_rasters": len({raster for role, raster, _year in sources if role != "paired_companion"}),
+                "companion_rasters": len({raster for role, raster, _year in sources if role == "paired_companion"}),
+                "records_submitted_for_cropping": submitted,
+                "successful_crops": successful,
+                "failed_crops": failed,
+                "crop_success_percent": round(100.0 * successful / submitted, 3) if submitted else "",
+            })
 
     # Washington, DC used a locally named multiband raster without a FIPS token.
     city_counties.setdefault("washingtondc", set()).add(("DC", "001"))

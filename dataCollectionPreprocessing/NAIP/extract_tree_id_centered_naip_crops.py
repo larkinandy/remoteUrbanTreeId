@@ -28,6 +28,7 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 import tree_centered_naip_utils as naip_utils
+from naip_cli import parse_positive_bands, require_columns
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,16 +81,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def parse_band_list(value: str) -> tuple[int, ...]:
-    bands = tuple(int(part.strip()) for part in str(value).split(",") if part.strip())
-    if len(bands) < 3 or min(bands) < 1:
-        raise SystemExit("--rgb-bands must contain at least three positive 1-based bands, e.g. 1,2,3")
-    return bands[:3]
-
-
-def require_columns(frame: pd.DataFrame, columns: list[str], path: Path) -> None:
-    missing = [column for column in columns if column not in frame.columns]
-    if missing:
-        raise RuntimeError(f"{path} is missing required column(s): {missing}")
+    return parse_positive_bands(value, 3, "--rgb-bands")
 
 
 def load_metadata(join_csv: Path, source_epsg: str, max_records: int | None) -> pd.DataFrame:

@@ -17,6 +17,7 @@ Sentinel-cell-centered crops.
 | `extract_tree_id_centered_naip_crops.py` | Creates RGBNIR crops from paired natural-color and companion/NIR imagery. |
 | `extract_tree_id_centered_5band_naip_crops.py` | Creates RGBNIR crops from single multiband imagery. |
 | `tree_centered_naip_utils.py` | Shared raster, archive, reprojection, block-reading, resizing, and QA functions. |
+| `naip_cli.py` | Shared CLI definitions and input-validation helpers used by the large workflow entry points. |
 | `inspect_sid_metadata.py` | Prints ArcPy raster, spatial-reference, and band metadata for SID files. |
 | `freeze_study_naip_provenance.py` | Reconstructs path-independent frozen source tables from retained outputs. |
 | `provenance/` | Frozen study configuration, boundary metadata, city source formats, and raster inventory. |
@@ -55,7 +56,7 @@ Scientific settings and storage locations are separate:
 - `provenance/study_naip_configuration.json` freezes the manuscript settings.
 - Inputs, outputs, caches, and mutable manifests are explicit runtime paths.
   The scripts contain no workstation drive-letter defaults.
-- Paths under `D:\urban_tree_data` below are examples, not defaults.
+- Example commands use a `$DATA_ROOT` variable rather than a workstation path.
 
 The study used 64 × 64-pixel, 38 × 38-metre RGBNIR crops and best-overlap
 source selection. Baltimore and Washington, DC used the single-multiband
@@ -89,10 +90,11 @@ The exact boundary file is checksum-frozen in
 were not retained and are explicitly recorded as a legacy limitation.
 
 ```powershell
+$DATA_ROOT = "path/to/urban_tree_data"
 python dataCollectionPreprocessing/NAIP/build_county_manifest.py `
-  --source D:\urban_tree_data\inventories `
+  --source "$DATA_ROOT\inventories" `
   --boundaries dataCollectionPreprocessing/NAIP/county_boundaries.geojson `
-  --output D:\urban_tree_data\manifests\naip_county_manifest.json
+  --output "$DATA_ROOT\manifests\naip_county_manifest.json"
 ```
 
 Inventory files must match `*_Final_*.csv` and contain longitude and latitude
@@ -103,10 +105,10 @@ unmatched points and city/county assignments.
 
 ```powershell
 python dataCollectionPreprocessing/NAIP/download_naip_paired_box.py `
-  --manifest D:\urban_tree_data\manifests\naip_county_manifest.json `
-  --output D:\urban_tree_data\naip_paired `
-  --index-cache D:\urban_tree_data\manifests\naip_paired_box_index.json `
-  --selection-output D:\urban_tree_data\manifests\naip_paired_selection.json `
+  --manifest "$DATA_ROOT\manifests\naip_county_manifest.json" `
+  --output "$DATA_ROOT\naip_paired" `
+  --index-cache "$DATA_ROOT\manifests\naip_paired_box_index.json" `
+  --selection-output "$DATA_ROOT\manifests\naip_paired_selection.json" `
   --target-year 2022 `
   --year-window 6 `
   --skip-city-code BAL `
@@ -124,10 +126,10 @@ they are not hidden in the code. Preserve each run's selection manifest.
 ```powershell
 python dataCollectionPreprocessing/NAIP/extract_tree_id_centered_naip_crops.py `
   --city-token atlanta `
-  --join-root D:\urban_tree_data\tree_to_crowns `
-  --naip-dir D:\urban_tree_data\naip_paired `
-  --county-manifest D:\urban_tree_data\manifests\naip_county_manifest.json `
-  --output-dir D:\urban_tree_data\tree_centered_naip `
+  --join-root "$DATA_ROOT\tree_to_crowns" `
+  --naip-dir "$DATA_ROOT\naip_paired" `
+  --county-manifest "$DATA_ROOT\manifests\naip_county_manifest.json" `
+  --output-dir "$DATA_ROOT\tree_centered_naip" `
   --crop-size 64 `
   --crop-metres 38 `
   --sid-selection-mode best-overlap `
@@ -143,9 +145,9 @@ provide a `--job-csv`. City discovery requires `--join-root`.
 ```powershell
 python dataCollectionPreprocessing/NAIP/extract_tree_id_centered_5band_naip_crops.py `
   --city-token baltimore `
-  --join-csv D:\urban_tree_data\tree_to_crowns\baltimore\baltimore_tree_to_nearest_detected_crown_5m.csv `
-  --naip-dir D:\urban_tree_data\naip_multiband\BAL `
-  --output-dir D:\urban_tree_data\tree_centered_naip `
+  --join-csv "$DATA_ROOT\tree_to_crowns\baltimore\baltimore_tree_to_nearest_detected_crown_5m.csv" `
+  --naip-dir "$DATA_ROOT\naip_multiband\BAL" `
+  --output-dir "$DATA_ROOT\tree_centered_naip" `
   --sid-pattern *.sid `
   --bands 1,2,3,4 `
   --crop-size 64 `
@@ -170,7 +172,7 @@ The retained outputs were summarized with:
 
 ```powershell
 python dataCollectionPreprocessing/NAIP/freeze_study_naip_provenance.py `
-  --crop-root D:\urban_tree_data\tree_centered_naip `
+  --crop-root "$DATA_ROOT\tree_centered_naip" `
   --boundaries dataCollectionPreprocessing/NAIP/county_boundaries.geojson `
   --output-dir dataCollectionPreprocessing/NAIP/provenance
 ```

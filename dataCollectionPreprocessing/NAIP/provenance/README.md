@@ -12,6 +12,9 @@ the parent NAIP workflow are ignored.
   assumption.
 - `study_naip_city_sources.csv` summarizes the retained per-city extraction
   configurations.
+- `frozen_study_naip_city_summary.csv` reports acquisition-year ranges, source
+  raster counts, submitted records, successful crops, failures, and extraction
+  success percentage by city.
 - `study_naip_source_rasters.csv` inventories the source raster and band
   combinations recorded in the retained crop metadata.
 - `study_naip_county_manifest.json` reconstructs the counties represented by

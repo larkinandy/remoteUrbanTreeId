@@ -25,6 +25,8 @@ import urllib.parse
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from naip_cli import downloader_args
+
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_BOX_ROOT = "https://nrcs.app.box.com/v/naip/folder/17936490251"
@@ -83,30 +85,7 @@ class DownloadTask:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--box-root-url", default=DEFAULT_BOX_ROOT)
-    parser.add_argument("--manifest", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--target-year", type=int, default=2022)
-    parser.add_argument("--year-window", type=int, default=6)
-    parser.add_argument("--city-code", action="append", default=[], help="Restrict to one or more city codes.")
-    parser.add_argument("--test-city", default="", help="Restrict to one city by manifest code or city name.")
-    parser.add_argument("--state", action="append", default=[], help="Restrict to one or more state abbreviations.")
-    parser.add_argument("--natural-product", action="append", default=["hn", "nc"])
-    parser.add_argument("--companion-product", action="append", default=["hc"])
-    parser.add_argument("--index-cache", type=Path, required=True, help="Local cache for the Box catalog crawl.")
-    parser.add_argument("--selection-output", type=Path, required=True, help="Output archive-selection manifest.")
-    parser.add_argument("--skip-city-code", action="append", default=[], help="City code stored through a non-paired source workflow. Repeatable.")
-    parser.add_argument("--refresh-index", action="store_true")
-    parser.add_argument("--scroll-rounds", type=int, default=80)
-    parser.add_argument("--settle-seconds", type=float, default=0.25)
-    parser.add_argument("--timeout-minutes", type=float, default=20)
-    parser.add_argument("--channel", default="msedge")
-    parser.add_argument("--headed", action="store_true")
-    parser.add_argument("--retries", type=int, default=4)
-    parser.add_argument("--download-limit", type=int, default=0)
-    parser.add_argument("--dry-run", action="store_true")
-    return parser.parse_args()
+    return downloader_args(__doc__, DEFAULT_BOX_ROOT)
 
 
 def load_json(path: Path) -> dict:
