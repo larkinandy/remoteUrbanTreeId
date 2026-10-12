@@ -25,16 +25,17 @@ City-specific example:
 from __future__ import annotations
 
 import argparse
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 import json
 import os
 from pathlib import Path
-import re
 import time
 from typing import Iterable
 
 import ee
 from dotenv import load_dotenv
+
+from sentinel_common import date_windows, parse_iso_date, slug_token
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -237,16 +238,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--limit-batches must be positive")
 
 
-def slug(value: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_").lower() or "unknown"
-
-
-def parse_date(value: str) -> date:
-    return date.fromisoformat(value)
-
-
 def city_filter_slugs(args: argparse.Namespace) -> set[str]:
-    return {slug(city) for city in args.city or []}
+    return {slug_token(city) for city in args.city or []}
 
 
 def manifest_city_lookup(points_dir: Path) -> dict[Path, str]:
@@ -296,7 +289,7 @@ def discover_point_sources(args: argparse.Namespace) -> list[dict[str, object]]:
     sources = []
     for path in paths:
         city = infer_city_from_points_file(path, lookup)
-        if requested and slug(city) not in requested and slug(path.parent.name) not in requested:
+        if requested and slug_token(city) not in requested and slug_token(path.parent.name) not in requested:
             continue
         sources.append({"city": city, "points_asset": None, "points_file": path})
 
@@ -595,20 +588,6 @@ def safe_task_status(task: ee.batch.Task) -> dict:
             flush=True,
         )
         return {"state": STALE_TASK_STATE, "error_message": str(exc)}
-
-
-def date_windows(start: date, end: date, interval_days: int) -> Iterable[tuple[date, date]]:
-    if end < start:
-        raise ValueError("--end-date must not precede --start-date")
-    if interval_days <= 0:
-        raise ValueError("--interval-days must be positive")
-
-    current = start
-    exclusive_end = end + timedelta(days=1)
-    while current < exclusive_end:
-        window_end = min(current + timedelta(days=interval_days), exclusive_end)
-        yield current, window_end
-        current = window_end
 
 
 def initialize_earth_engine(args: argparse.Namespace) -> None:
@@ -916,7 +895,7 @@ def run_city_exports(
     task_gate: TaskCapacityGate,
 ) -> tuple[list[ee.batch.Task], int, int]:
     point_batches = load_point_batches(args)
-    city_slug = slug(args.city)
+    city_slug = slug_token(args.city)
 
     tasks = []
     skipped_completed = 0
@@ -971,8 +950,8 @@ def main() -> int:
     apply_test_presets(args)
     validate_args(args)
     initialize_earth_engine(args)
-    start = parse_date(args.start_date)
-    end = parse_date(args.end_date)
+    start = parse_iso_date(args.start_date, "--start-date")
+    end = parse_iso_date(args.end_date, "--end-date")
     submitted_at = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     sources = discover_point_sources(args)
     completed_stems = load_completed_csv_stems(args.completed_dir)

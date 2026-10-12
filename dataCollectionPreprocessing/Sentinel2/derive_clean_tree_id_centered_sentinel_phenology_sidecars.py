@@ -23,33 +23,12 @@ import pandas as pd
 from pyproj import Transformer
 
 import sentinel_phenology_metrics as derived_metrics
+from sentinel_common import canonical_city
 from sentinel_schema import SENTINEL_SEQUENCE_COLUMNS
 
 
 COORD_SCALE = 10_000_000
 EARTH_RADIUS_M = 6_371_008.8
-CITY_ALIASES = {
-    "abq": "albuquerque",
-    "ana": "anaheim",
-    "arl": "arlington",
-    "atl": "atlanta",
-    "bal": "baltimore",
-    "buf": "buffalo",
-    "cc": "capecoral",
-    "cos": "coloradosprings",
-    "csp": "coloradosprings",
-    "dca": "washingtondc",
-    "dc": "washingtondc",
-    "den": "denver",
-    "ggv": "gardengrove",
-    "hnb": "huntingtonbeach",
-    "la": "losangeles",
-    "lax": "losangeles",
-    "nyc": "newyork",
-    "sf": "sanfrancisco",
-}
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--crop-root", type=Path, required=True)
@@ -75,11 +54,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
-
-
-def norm_city(value: str) -> str:
-    token = value.strip().lower().replace("-", "").replace("_", "")
-    return CITY_ALIASES.get(token, token)
 
 
 def discover_cities(crop_root: Path) -> list[str]:
@@ -425,8 +399,8 @@ def process_city(city: str, args: argparse.Namespace) -> dict[str, Any]:
 
 def main() -> int:
     args = parse_args()
-    cities = [norm_city(city) for city in args.city_token] if args.city_token else discover_cities(Path(args.crop_root))
-    exclude = {norm_city(city) for city in args.exclude_city_token}
+    cities = [canonical_city(city) for city in args.city_token] if args.city_token else discover_cities(Path(args.crop_root))
+    exclude = {canonical_city(city) for city in args.exclude_city_token}
     cities = [city for city in cities if city not in exclude]
     if not cities:
         raise SystemExit("No city jobs selected.")

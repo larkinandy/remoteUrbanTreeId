@@ -17,6 +17,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from sentinel_common import normalize_token
+
 
 S2_RAW_COLS = ["B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B11", "B12"]
 S2_INDEX_COLS = [
@@ -49,12 +51,6 @@ class CompletedExport:
     @property
     def window_key(self) -> str:
         return f"{self.window_start:%Y%m%d}_{self.window_end:%Y%m%d}"
-
-
-def normalize_token(value: object) -> str:
-    text = str(value or "").lower()
-    text = text.replace("alberquerque", "albuquerque")
-    return re.sub(r"[^a-z0-9]+", "", text)
 
 
 def parse_completed_export(path: Path) -> CompletedExport | None:

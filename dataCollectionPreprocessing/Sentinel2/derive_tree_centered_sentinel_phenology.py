@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime, timedelta
 import json
 from pathlib import Path
 import re
@@ -26,17 +25,19 @@ import pandas as pd
 
 import interpolate_sentinel_cell_time_series as interpolated_sentinel
 import sentinel_cell_features as sentinel_base
+import sentinel_export_inventory as export_inventory
 import sentinel_phenology_metrics as derived_metrics
+from sentinel_common import city_paths, finite_int, normalize_token
 from sentinel_schema import SENTINEL_SEQUENCE_COLUMNS
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--record-index-root", type=Path, required=True)
-    parser.add_argument("--original-timeseries-dir", type=Path, required=True)
-    parser.add_argument("--supplemental-timeseries-dir", type=Path, required=True)
-    parser.add_argument("--original-raw-sentinel-dir", type=Path, required=True)
-    parser.add_argument("--additional-raw-sentinel-dir", type=Path, required=True)
+    parser.add_argument("--original-timeseries-root", type=Path, required=True)
+    parser.add_argument("--supplemental-timeseries-root", type=Path, required=True)
+    parser.add_argument("--original-raw-sentinel-root", type=Path, required=True)
+    parser.add_argument("--additional-raw-sentinel-root", type=Path, required=True)
     parser.add_argument("--missing-raw-cell-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--timeseries-output-root", type=Path, required=True)
@@ -113,22 +114,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def normalize_token(value: object) -> str:
-    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
-
-
-def finite_int(value: object) -> int | None:
-    if pd.isna(value):
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not np.isfinite(number):
-        return None
-    return int(number)
-
-
 def discover_record_indexes(args: argparse.Namespace) -> dict[str, Path]:
     selected = None if args.city_token is None else {normalize_token(v) for v in args.city_token if str(v).strip()}
     excluded = {normalize_token(v) for v in args.exclude_city_token if str(v).strip()}
@@ -148,240 +133,6 @@ def discover_record_indexes(args: argparse.Namespace) -> dict[str, Path]:
     if not out:
         raise FileNotFoundError(f"No record indexes found under {args.record_index_root}")
     return out
-
-
-def city_paths(root: Path, pattern: str, city: str) -> list[Path]:
-    if not Path(root).exists():
-        return []
-    return [path for path in sorted(Path(root).glob(pattern)) if city in normalize_token(path.name) or city == normalize_token(path.parent.name)]
-
-
-def parse_date_arg(value: str, label: str) -> date:
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError as exc:
-        raise ValueError(f"{label} must be YYYY-MM-DD: {value!r}") from exc
-
-
-def date_windows(start: date, end: date, interval_days: int) -> list[tuple[date, date]]:
-    if end < start:
-        raise ValueError("--raw-export-end-date must not precede --raw-export-start-date")
-    if interval_days <= 0:
-        raise ValueError("--raw-export-interval-days must be positive")
-    current = start
-    exclusive_end = end + timedelta(days=1)
-    out: list[tuple[date, date]] = []
-    while current < exclusive_end:
-        window_end = min(current + timedelta(days=interval_days), exclusive_end)
-        out.append((current, window_end))
-        current = window_end
-    return out
-
-
-def missing_raw_cell_path(args: argparse.Namespace, city: str) -> Path | None:
-    root = Path(args.missing_raw_cell_root)
-    candidates = [
-        root / city / f"{city}_tree_centered_sentinel_cells_missing_raw15day.csv",
-        root / f"{city}_tree_centered_sentinel_cells_missing_raw15day.csv",
-    ]
-    for path in candidates:
-        if path.exists():
-            return path
-    matches = [
-        path
-        for path in sorted(root.glob("*/*_tree_centered_sentinel_cells_missing_raw15day.csv"))
-        if normalize_token(path.parent.name) == city or normalize_token(path.name).startswith(city)
-    ]
-    matches.extend(
-        path
-        for path in sorted(root.glob("*_tree_centered_sentinel_cells_missing_raw15day.csv"))
-        if normalize_token(path.name).startswith(city)
-    )
-    return matches[0] if matches else None
-
-
-def raw_export_file_stems(city: str, start: date, end: date, interval_days: int, batch_count: int) -> set[str]:
-    stems: set[str] = set()
-    for window_start, window_end in date_windows(start, end, interval_days):
-        inclusive_end = window_end - timedelta(days=1)
-        for batch_index in range(batch_count):
-            stems.add(
-                f"tree_centered_s2_raw15day_{city}_"
-                f"{window_start:%Y%m%d}_{inclusive_end:%Y%m%d}_"
-                f"batch_{batch_index:05d}"
-            )
-    return stems
-
-
-def parse_raw_batch_index(path: Path) -> int | None:
-    match = re.search(r"_batch_(\d{5})$", path.stem)
-    return int(match.group(1)) if match else None
-
-
-def raw_batches_for_row_ids(row_ids: set[int], batch_size: int) -> set[int]:
-    if batch_size <= 0:
-        raise ValueError("raw export batch size must be positive")
-    batches: set[int] = set()
-    for row_id in row_ids:
-        if row_id < 0:
-            continue
-        # Reduced-cell ids are 1-based in the cell map, while export batches are 0-based.
-        batches.add(max(0, (int(row_id) - 1) // int(batch_size)))
-    return batches
-
-
-def complete_raw_paths_by_present_batch(
-    city: str,
-    paths: list[Path],
-    prefix: str,
-    start_date_value: str,
-    end_date_value: str,
-    interval_days: int,
-) -> tuple[list[Path], dict[str, Any]]:
-    if not paths:
-        return [], {
-            "checked": True,
-            "expected": 0,
-            "present": 0,
-            "present_matching": 0,
-            "missing": 0,
-            "complete_batches": 0,
-            "incomplete_batches": 0,
-        }
-    start = parse_date_arg(str(start_date_value), "raw export start date")
-    end = parse_date_arg(str(end_date_value), "raw export end date")
-    windows = date_windows(start, end, int(interval_days))
-    present = {path.stem for path in paths}
-    batch_indices = sorted({batch for batch in (parse_raw_batch_index(path) for path in paths) if batch is not None})
-    complete_batches: set[int] = set()
-    incomplete_batches: set[int] = set()
-    expected_count = 0
-    missing_count = 0
-    for batch_index in batch_indices:
-        batch_complete = True
-        for window_start, window_end in windows:
-            inclusive_end = window_end - timedelta(days=1)
-            expected_count += 1
-            stem = (
-                f"{prefix}_{city}_"
-                f"{window_start:%Y%m%d}_{inclusive_end:%Y%m%d}_"
-                f"batch_{batch_index:05d}"
-            )
-            if stem not in present:
-                batch_complete = False
-                missing_count += 1
-        if batch_complete:
-            complete_batches.add(batch_index)
-        else:
-            incomplete_batches.add(batch_index)
-    filtered = [path for path in paths if parse_raw_batch_index(path) in complete_batches]
-    return filtered, {
-        "checked": True,
-        "expected": int(expected_count),
-        "present": int(len(present)),
-        "present_matching": int(expected_count - missing_count),
-        "missing": int(missing_count),
-        "complete_batches": int(len(complete_batches)),
-        "incomplete_batches": int(len(incomplete_batches)),
-    }
-
-
-def read_missing_raw_cell_batches(args: argparse.Namespace, city: str) -> tuple[Path, dict[int, int], int]:
-    points_path = missing_raw_cell_path(args, city)
-    if points_path is None:
-        raise RuntimeError(f"{city}: no missing-cell CSV was found under {args.missing_raw_cell_root}")
-    header = pd.read_csv(points_path, nrows=0).columns
-    row_col = None
-    for candidate in ("reduced_id", "row_index", "crown_reduced_id"):
-        matches = [column for column in header if str(column).lower() == candidate]
-        if matches:
-            row_col = matches[0]
-            break
-    if row_col is None:
-        raise RuntimeError(f"{city}: {points_path} has no reduced_id/row_index column")
-    table = pd.read_csv(points_path, usecols=[row_col], low_memory=False)
-    cell_ids = pd.to_numeric(table[row_col], errors="coerce")
-    valid = cell_ids.notna()
-    if not bool(valid.all()):
-        table = table.loc[valid].copy()
-        cell_ids = cell_ids.loc[valid]
-    batch_size = int(args.raw_export_batch_size)
-    batch_by_cell: dict[int, int] = {}
-    for position, cell_id in enumerate(cell_ids.astype(np.int64).tolist()):
-        batch_by_cell[int(cell_id)] = int(position // batch_size)
-    batch_count = int(np.ceil(len(cell_ids) / batch_size)) if len(cell_ids) else 0
-    return points_path, batch_by_cell, batch_count
-
-
-def plan_complete_additional_raw_batches(
-    args: argparse.Namespace,
-    city: str,
-    needed_additional: set[int],
-    additional_paths: list[Path],
-) -> tuple[set[int], set[int], list[Path], dict[str, Any]]:
-    if args.skip_raw_file_completeness_check or not needed_additional:
-        return needed_additional, set(), additional_paths, {
-            "checked": False,
-            "expected": 0,
-            "present": len(additional_paths),
-            "missing": 0,
-            "complete_batches": 0,
-            "incomplete_batches": 0,
-            "excluded_additional_cells": 0,
-        }
-    points_path, batch_by_cell, batch_count = read_missing_raw_cell_batches(args, city)
-    if batch_count <= 0:
-        raise RuntimeError(f"{city}: missing-cell CSV is empty: {points_path}")
-    start = parse_date_arg(str(args.raw_export_start_date), "--raw-export-start-date")
-    end = parse_date_arg(str(args.raw_export_end_date), "--raw-export-end-date")
-    windows = date_windows(start, end, int(args.raw_export_interval_days))
-    present = {path.stem for path in additional_paths}
-    complete_batches: set[int] = set()
-    incomplete_batches: set[int] = set()
-    missing_file_count = 0
-    expected_count = 0
-    for batch_index in range(batch_count):
-        batch_complete = True
-        for window_start, window_end in windows:
-            inclusive_end = window_end - timedelta(days=1)
-            expected_count += 1
-            stem = (
-                f"tree_centered_s2_raw15day_{city}_"
-                f"{window_start:%Y%m%d}_{inclusive_end:%Y%m%d}_"
-                f"batch_{batch_index:05d}"
-            )
-            if stem not in present:
-                batch_complete = False
-                missing_file_count += 1
-        if batch_complete:
-            complete_batches.add(batch_index)
-        else:
-            incomplete_batches.add(batch_index)
-    needed_batches = {batch_by_cell[cell_id] for cell_id in needed_additional if cell_id in batch_by_cell}
-    complete_needed_batches = complete_batches.intersection(needed_batches)
-    complete_cells = {cell_id for cell_id in needed_additional if batch_by_cell.get(cell_id) in complete_needed_batches}
-    excluded_cells = needed_additional.difference(complete_cells)
-    filtered_paths = [path for path in additional_paths if parse_raw_batch_index(path) in complete_needed_batches]
-    if incomplete_batches:
-        print(
-            f"{city}: supplemental raw Sentinel complete batches={len(complete_batches):,}/{batch_count:,}; "
-            f"excluding {len(excluded_cells):,} crown cell(s) from supplemental phenology due to incomplete batch exports.",
-            flush=True,
-        )
-    status = {
-        "checked": True,
-        "expected": int(expected_count),
-        "present": int(len(present)),
-        "present_matching": int(expected_count - missing_file_count),
-        "missing": int(missing_file_count),
-        "complete_batches": int(len(complete_batches)),
-        "incomplete_batches": int(len(incomplete_batches)),
-        "needed_batches": int(len(needed_batches)),
-        "complete_needed_batches": int(len(complete_needed_batches)),
-        "excluded_additional_cells": int(len(excluded_cells)),
-        "points_file": points_path.name,
-    }
-    return complete_cells, excluded_cells, filtered_paths, status
 
 
 def read_interpolated_timeseries(paths: list[Path], needed_rows: set[int], chunksize: int) -> dict[int, pd.DataFrame]:
@@ -418,8 +169,8 @@ def load_separate_interpolated_groups(
     needed_original: set[int],
     needed_additional: set[int],
 ) -> tuple[dict[int, pd.DataFrame], dict[int, pd.DataFrame], list[Path], list[Path]]:
-    original_paths = city_paths(args.original_timeseries_dir, args.original_timeseries_pattern, city)
-    supplemental_paths = city_paths(args.supplemental_timeseries_dir, args.supplemental_timeseries_pattern, city)
+    original_paths = city_paths(args.original_timeseries_root, args.original_timeseries_pattern, city)
+    supplemental_paths = city_paths(args.supplemental_timeseries_root, args.supplemental_timeseries_pattern, city)
     started = time.perf_counter()
     original_groups = read_interpolated_timeseries(original_paths, needed_original, int(args.chunksize))
     print(
@@ -1092,9 +843,9 @@ def process_city(args: argparse.Namespace, city: str, index_path: Path) -> dict[
                 flush=True,
             )
     else:
-        original_paths = city_paths(args.original_timeseries_dir, args.original_timeseries_pattern, city)
-        original_raw_paths = city_paths(args.original_raw_sentinel_dir, args.original_raw_pattern, city)
-        complete_original_raw_paths, original_raw_status = complete_raw_paths_by_present_batch(
+        original_paths = city_paths(args.original_timeseries_root, args.original_timeseries_pattern, city)
+        original_raw_paths = city_paths(args.original_raw_sentinel_root, args.original_raw_pattern, city)
+        complete_original_raw_paths, original_raw_status = export_inventory.complete_raw_paths_by_present_batch(
             city,
             original_raw_paths,
             "s2_reduced_cells",
@@ -1102,11 +853,14 @@ def process_city(args: argparse.Namespace, city: str, index_path: Path) -> dict[
             str(args.original_raw_export_end_date),
             int(args.original_raw_export_interval_days),
         )
-        needed_original_raw_batches = raw_batches_for_row_ids(needed_original, int(args.original_raw_export_batch_size))
+        needed_original_raw_batches = export_inventory.raw_batches_for_row_ids(
+            needed_original, int(args.original_raw_export_batch_size)
+        )
         if needed_original_raw_batches:
             before_count = len(complete_original_raw_paths)
             complete_original_raw_paths = [
-                path for path in complete_original_raw_paths if parse_raw_batch_index(path) in needed_original_raw_batches
+                path for path in complete_original_raw_paths
+                if export_inventory.parse_raw_batch_index(path) in needed_original_raw_batches
             ]
             if before_count != len(complete_original_raw_paths):
                 print(
@@ -1117,12 +871,14 @@ def process_city(args: argparse.Namespace, city: str, index_path: Path) -> dict[
                 )
         else:
             complete_original_raw_paths = []
-        additional_paths = city_paths(args.additional_raw_sentinel_dir, args.additional_raw_pattern, city)
-        complete_additional, incomplete_additional, complete_additional_paths, raw_file_status = plan_complete_additional_raw_batches(
+        additional_paths = city_paths(args.additional_raw_sentinel_root, args.additional_raw_pattern, city)
+        complete_additional, incomplete_additional, complete_additional_paths, raw_file_status = (
+            export_inventory.plan_complete_additional_raw_batches(
             args,
             city,
             needed_additional,
             additional_paths,
+            )
         )
         print(
             f"{city}: loading Sentinel sources; original_interpolated_files={len(original_paths):,}; "
