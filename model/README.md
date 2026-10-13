@@ -26,6 +26,16 @@ without using the independent test set.
 Generated checkpoints, embeddings, prediction exports, and input shards are
 not stored in Git.
 
+The complete model-input shard dataset is available from
+[Google Drive](https://drive.google.com/file/d/1w_dBZZpTgRVNfBL0-zrhhU7tJkKSsjJM/view?usp=sharing).
+
+The final discriminator model bundle is available from
+[Google Drive](https://drive.google.com/file/d/1yDKvUhOKYt_-wgEWzVxq-gO6Azwr9rrj/view?usp=sharing).
+
+The final pruned stage-two model bundle, including the five checkpoints used
+for the reported ensemble, is available from
+[Google Drive](https://drive.google.com/file/d/1HoV5XiQSYIoHN0NanS3hPHoOTnQjWzU-/view?usp=sharing).
+
 ## Final workflow
 
 1. Train the discriminator using

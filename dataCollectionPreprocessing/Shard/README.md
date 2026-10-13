@@ -5,6 +5,11 @@ scripts normalize inventory records, calculate record-level QA, align all
 modality products by stable `tree_id`, and write the NPZ shards consumed by the
 discriminator and stage-two classifier.
 
+The completed model-input shard dataset used in the study is available from
+[Google Drive](https://drive.google.com/file/d/1w_dBZZpTgRVNfBL0-zrhhU7tJkKSsjJM/view?usp=sharing).
+It contains the source NPZ shards rather than the optional, larger
+memory-mapped performance sidecars.
+
 All commands use an explicit data root. In PowerShell, define it for the local
 workstation before running the examples:
 

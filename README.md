@@ -69,9 +69,9 @@ Python environment.
 
 **Data and model weights**
 
-[Training Data Shards](https://drive.google.com/file/d/1EQMfVH5jSy4wMFY_SdeiGh6jlVpExmff/view?usp=sharing)  
-[Discriminator Model Weights](https://drive.google.com/file/d/18XbRq-QmOd4JK0uw4ois8fOJoFIqQH3P/view?usp=sharing)  
-[Classifier Model Weights](https://drive.google.com/file/d/1i0VKAXUv2_UB2Y_uVvMKgp0pG83G9Cve/view?usp=sharing)  
+- [Training data shards](https://drive.google.com/file/d/1w_dBZZpTgRVNfBL0-zrhhU7tJkKSsjJM/view?usp=sharing)
+- [Final discriminator model weights](https://drive.google.com/file/d/1yDKvUhOKYt_-wgEWzVxq-gO6Azwr9rrj/view?usp=sharing)
+- [Final stage-two model weights and ensemble checkpoints](https://drive.google.com/file/d/1HoV5XiQSYIoHN0NanS3hPHoOTnQjWzU-/view?usp=sharing)
 
 **Funding and related resources**
 
