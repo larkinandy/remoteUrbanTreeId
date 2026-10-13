@@ -5,6 +5,15 @@ remote-sensing-derived taxon groups. Group construction uses validation data
 only. Independent test embeddings are evaluated only after every mapping has
 been frozen.
 
+Download the final discriminator model bundle from
+[Google Drive](https://drive.google.com/file/d/1yDKvUhOKYt_-wgEWzVxq-gO6Azwr9rrj/view?usp=sharing).
+The bundle contains the frozen model weights, run configuration, training
+history, and validation embeddings used for validation-only group
+construction.
+
+The corresponding model-input shard dataset is available separately from
+[Google Drive](https://drive.google.com/file/d/1w_dBZZpTgRVNfBL0-zrhhU7tJkKSsjJM/view?usp=sharing).
+
 ## Script roles
 
 | Script | Role | Status |

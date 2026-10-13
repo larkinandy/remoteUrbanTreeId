@@ -21,6 +21,17 @@ final six-branch architecture:
 
 The canopy-structure branch is excluded by the final pruning decision.
 
+Download the complete model-input shard dataset from
+[Google Drive](https://drive.google.com/file/d/1w_dBZZpTgRVNfBL0-zrhhU7tJkKSsjJM/view?usp=sharing).
+The optional prepared memory-mapped sidecars are not required and are not part
+of this download.
+
+Download the final pruned model bundle from
+[Google Drive](https://drive.google.com/file/d/1HoV5XiQSYIoHN0NanS3hPHoOTnQjWzU-/view?usp=sharing).
+The bundle includes the five validation-selected checkpoints required to
+reproduce the reported ensemble, together with the run configuration and
+training history.
+
 ```powershell
 python model/stage2/run_final_model.py `
   --complete-shard-root "$DATA_ROOT/tree_centered_complete_sharded100k_prism_daily3_clean" `
