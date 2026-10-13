@@ -1,4 +1,4 @@
-## Remote Urban Tree Identification
+## Remote Urban Tree Classification
 
 A multimodal machine-learning pipeline for assigning urban trees to
 remote-sensing-informed taxonomic groups. The manuscript model predicts 11
