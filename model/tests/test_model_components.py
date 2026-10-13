@@ -4,8 +4,13 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import numpy as np
 
 from model import model_components as components
+from model.stage2 import artifacts
 
 
 @unittest.skipIf(components.TORCH_IMPORT_ERROR is not None, "PyTorch is not installed")
@@ -49,6 +54,24 @@ class ModelComponentSmokeTests(unittest.TestCase):
         """Misspelled normalization modes fail before training begins."""
         with self.assertRaises(ValueError):
             components.make_spatial_normalization(32, "instance")
+
+
+class ArtifactSchemaTests(unittest.TestCase):
+    """Verify safe schema inspection of legacy NPZ metadata arrays."""
+
+    def test_npz_schema_does_not_deserialize_object_arrays(self) -> None:
+        """Object-typed metadata can be fingerprinted from NPY headers alone."""
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            path = Path(directory) / "legacy_shard.npz"
+            np.savez(
+                path,
+                numeric=np.zeros((2, 3), dtype=np.float32),
+                metadata=np.asarray(["a", "b"], dtype=object),
+            )
+            first = artifacts.npz_schema_sha256(path)
+            second = artifacts.npz_schema_sha256(path)
+        self.assertEqual(first, second)
+        self.assertEqual(len(first), 64)
 
 
 if __name__ == "__main__":

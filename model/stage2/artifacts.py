@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -82,16 +83,33 @@ def validate_split_manifest(path: Path) -> dict:
 
 
 def npz_schema_sha256(path: Path) -> str:
-    """Fingerprint NPZ field names, shapes, and dtypes without hashing large arrays."""
-    with np.load(path, allow_pickle=False) as data:
-        schema = [
-            {
-                "name": name,
-                "shape": list(data[name].shape),
-                "dtype": str(data[name].dtype),
-            }
-            for name in sorted(data.files)
-        ]
+    """Fingerprint NPZ names, shapes, and dtypes without loading array payloads.
+
+    Complete legacy shards include object-typed metadata arrays. Reading only
+    each embedded NPY header avoids deserializing those objects while still
+    producing the same schema representation used for provenance checks.
+    """
+    schema = []
+    with zipfile.ZipFile(path) as archive:
+        members = sorted(name for name in archive.namelist() if name.endswith(".npy"))
+        for member in members:
+            with archive.open(member) as stream:
+                version = np.lib.format.read_magic(stream)
+                if version == (1, 0):
+                    shape, _, dtype = np.lib.format.read_array_header_1_0(stream)
+                elif version == (2, 0):
+                    shape, _, dtype = np.lib.format.read_array_header_2_0(stream)
+                else:
+                    raise ValueError(
+                        f"Unsupported NPY header version {version} in {path}:{member}"
+                    )
+            schema.append(
+                {
+                    "name": Path(member).stem,
+                    "shape": list(shape),
+                    "dtype": str(dtype),
+                }
+            )
     encoded = json.dumps(schema, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
