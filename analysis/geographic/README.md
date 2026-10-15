@@ -17,11 +17,12 @@ probabilities are summed into `collapsed_k6` using
   prepares comparison metrics for the one-city and primary national models.
 - `report_one_city_results.py` regenerates publication summaries from the
   prepared source-model table without reopening the large prediction arrays.
-- `select_median_city.py` records the earlier, primary-model-only selection of a
-  representative city. Geographic sensitivity results are not used for that
-  selection.
-- `compare_training_regimes.py` is the earlier three-regime St. Louis diagnostic
-  retained for provenance; the seven-source analysis is the final comparison.
+- `summarize_default_loco_one_city.py` produces the final 22-target-city
+  comparison and paired differences among training regimes.
+- `export_loco_gis_predictions.py` exports aligned k11 and collapsed-k6 labels
+  and predictions for spatial analysis.
+- `analyze_loco_spatial_error.py` calculates the final Rancho Cucamonga LOCO
+  Moran's I statistics used in the manuscript.
 
 ## Reporting rules
 

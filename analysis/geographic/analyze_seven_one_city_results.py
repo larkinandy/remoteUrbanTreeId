@@ -22,7 +22,7 @@ from geographic_reporting import write_one_city_reports
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = ROOT / "analysis" / "geographic" / "geographic_config.json"
-DEFAULT_OUTPUT = ROOT / "outputs" / "reviewer_revision" / "seven_one_city_analysis"
+DEFAULT_OUTPUT = ROOT / "outputs" / "manuscript_analysis" / "one_city_models"
 
 
 def parse_args() -> argparse.Namespace:

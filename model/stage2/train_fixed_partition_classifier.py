@@ -1020,6 +1020,7 @@ def main() -> int:
     manifest, paths = clean_disc.discover_shards(args)
     first_shard_path = next(iter(paths.values()))
     args.input_schema_sha256 = artifacts.npz_schema_sha256(first_shard_path)
+    args.input_feature_schema_sha256 = artifacts.npz_feature_schema_sha256(first_shard_path)
     args.phenology_zero_indices = []
     args.phenology_zero_matched_columns = []
     if args.zero_phenology_feature_regex:
@@ -1418,7 +1419,11 @@ def main() -> int:
             "best_val_score": best_score,
             "best_val_macro_f1": best_macro,
             "group_names": group_names,
-            "provenance": artifacts.provenance(args.split_manifest, args.input_schema_sha256),
+            "provenance": artifacts.provenance(
+                args.split_manifest,
+                args.input_schema_sha256,
+                args.input_feature_schema_sha256,
+            ),
             "args": clean_disc.safe_json_args(args),
         }
         (run_dir / "run_config.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -1442,7 +1447,11 @@ def main() -> int:
         "test_macro_f1": test_metrics["macro_f1"],
         "test_weighted_f1": test_metrics["weighted_f1"],
         "group_names": group_names,
-        "provenance": artifacts.provenance(args.split_manifest, args.input_schema_sha256),
+        "provenance": artifacts.provenance(
+            args.split_manifest,
+            args.input_schema_sha256,
+            args.input_feature_schema_sha256,
+        ),
         "args": clean_disc.safe_json_args(args),
     }
     (run_dir / "run_config.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")

@@ -1,0 +1,20 @@
+analysis,criterion,records,accuracy,macro_f1,weighted_f1,stratum_order
+Reference,All test records,161508,0.793,0.772,0.792,0
+Vegetation height,Height >=2 m,153529,0.798,0.777,0.797,1
+Vegetation height,Height <2 m,7979,0.698,0.610,0.694,2
+Taxon provenance,Core taxa,150000,0.799,0.781,0.798,1
+Taxon provenance,Rare taxa,11508,0.714,0.624,0.714,2
+CHM tall vegetation within Sentinel cell,>=25%,109077,0.813,0.794,0.812,1
+CHM tall vegetation within Sentinel cell,<25%,38951,0.756,0.717,0.755,2
+LiDAR year mismatch,>=5 years,47892,0.802,0.706,0.800,1
+LiDAR year mismatch,<5 years,98428,0.795,0.778,0.794,2
+Within-cell NAIP vegetation fraction,>=25%,120575,0.803,0.786,0.803,1
+Within-cell NAIP vegetation fraction,<25%,32954,0.779,0.728,0.776,2
+Crown-match distance,>=2.5 m,75301,0.774,0.748,0.773,1
+Crown-match distance,<2.5 m,86207,0.809,0.793,0.809,2
+Sentinel-2 interpolation,>=25% interpolated days,24429,0.789,0.739,0.789,1
+Sentinel-2 interpolation,<25% interpolated days,129100,0.800,0.780,0.799,2
+Duplicate coordinates,>=5% duplicate records,12665,0.803,0.735,0.799,1
+Duplicate coordinates,<5% duplicate records,148843,0.792,0.772,0.791,2
+NAIP year mismatch,>=2 years,39444,0.787,0.717,0.778,1
+NAIP year mismatch,<2 years,114085,0.802,0.733,0.800,2

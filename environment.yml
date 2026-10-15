@@ -6,8 +6,6 @@ dependencies:
   # Versions recorded from the study workstation's treeid-gpu environment.
   - python=3.11.15
   - pip=26.1.2
-  - numpy=2.4.6
-  - pandas=3.0.3
   - h5py=3.16.0
   - h5netcdf=1.8.1
   - netcdf4=1.7.4

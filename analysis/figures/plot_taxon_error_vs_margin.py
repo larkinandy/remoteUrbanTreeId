@@ -33,10 +33,10 @@ K11_MANUSCRIPT_COLORS = colors("k11_manuscript")
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
-    p.add_argument("--predictions", type=Path, default=Path("outputs/reviewer_revision/final_pruned_k11_test_top5_ensemble/ensemble_predictions.npz"))
+    p.add_argument("--predictions", type=Path, required=True, help="Final independent-test ensemble prediction NPZ.")
     p.add_argument("--core-partition", type=Path, default=Path("config/core_k11_partition.npz"))
     p.add_argument("--expanded-partition", type=Path, default=Path("config/final_k11_partition.npz"))
-    p.add_argument("--rare-embeddings", type=Path, default=Path("outputs/reviewer_revision/revised_groupnorm_interaction_k11_rare_extension/rare_taxon_embeddings.npz"))
+    p.add_argument("--rare-embeddings", type=Path, required=True, help="Frozen rare-taxon development embedding artifact.")
     p.add_argument("--shard-root", type=Path, required=True, help="Complete shard root, typically below $DATA_ROOT.")
     p.add_argument("--output-dir", type=Path, default=None)
     p.add_argument("--dataset-label", default="final pruned height-screened test ensemble")
@@ -207,7 +207,7 @@ def main() -> None:
     args = parse_args()
     if args.output_dir is None:
         args.output_dir = Path(
-            "outputs/reviewer_revision/final_pruned_"
+            "outputs/manuscript_figures/final_pruned_"
             f"{args.group_space}_test_taxon_margin_error"
         )
     args.output_dir.mkdir(parents=True, exist_ok=True)

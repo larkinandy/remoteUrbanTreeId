@@ -4,10 +4,6 @@ This directory contains the two modeling stages used for the manuscript. The
 checked-in partition and collapse configuration are frozen artifacts selected
 without using the independent test set.
 
-![Taxon discriminator architecture](../images/Discriminator.png)
-
-![Stage-two classifier architecture](../images/Architecture.png)
-
 ## Directory layout
 
 - [`discriminator/`](discriminator/) contains stage-one discriminator

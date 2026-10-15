@@ -49,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=Path("outputs/reviewer_revision/k11_single_modality_test_inference"),
+        default=Path("outputs/manuscript_analysis/single_modality_test_inference"),
     )
     parser.add_argument("--batch-size", type=int, default=1024)
     parser.add_argument("--num-workers", type=int, default=3)

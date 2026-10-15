@@ -1,0 +1,39 @@
+{
+  "matched_cities": [
+    "auroraco",
+    "baltimore",
+    "buffalo",
+    "capecoral",
+    "columbus",
+    "denver",
+    "gardengrove",
+    "huntingtonbeach",
+    "lasvegas",
+    "louisville",
+    "madison",
+    "newyork",
+    "pittsburgh",
+    "portland",
+    "ranchocucamonga",
+    "sandiego",
+    "sanfrancisco",
+    "sanjose",
+    "seattle",
+    "siouxfalls",
+    "stlouis",
+    "washingtondc"
+  ],
+  "city_count": 22,
+  "unique_test_records": 147531,
+  "qa_screen": "Records with the low vegetation-height QA flag were excluded.",
+  "macro_f1_rule": "Groups required at least 10 screened records within each target city.",
+  "summary_weighting": "City metrics were averaged within source model, then source models were weighted equally.",
+  "loco_vs_default": {
+    "mean_delta_accuracy": -0.12619597513197653,
+    "mean_delta_macro_f1": -0.16282567411096394,
+    "mean_delta_weighted_f1": -0.11975811703724783,
+    "cities_loco_better_accuracy": 0,
+    "cities_loco_better_macro_f1": 0,
+    "cities_loco_better_weighted_f1": 0
+  }
+}

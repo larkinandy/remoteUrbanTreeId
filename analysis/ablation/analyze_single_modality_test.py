@@ -25,15 +25,29 @@ def provenance_path(path: Path) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--single-root", type=Path, default=Path("outputs/reviewer_revision/k11_single_modality_test_inference"))
-    parser.add_argument("--reference", type=Path, default=Path("outputs/reviewer_revision/final_pruned_k11_test_top5_ensemble/ensemble_predictions.npz"))
+    parser.add_argument(
+        "--single-root",
+        type=Path,
+        required=True,
+        help="Directory containing the frozen single-modality test predictions.",
+    )
+    parser.add_argument(
+        "--reference",
+        type=Path,
+        required=True,
+        help="Frozen full-model independent-test prediction archive.",
+    )
     parser.add_argument(
         "--collapse",
         type=Path,
         default=ROOT / "config" / "final_k11_to_k6_collapse.npz",
         help="Frozen balanced 11-to-6 manuscript mapping.",
     )
-    parser.add_argument("--output-dir", type=Path, default=Path("outputs/reviewer_revision/k11_single_modality_test_analysis"))
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("outputs/manuscript_analysis/single_modality_test"),
+    )
     return parser.parse_args()
 
 

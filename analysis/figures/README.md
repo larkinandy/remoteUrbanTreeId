@@ -34,18 +34,37 @@ python analysis/figures/plot_combined_discrimination_space.py
 
 python analysis/figures/plot_gate_weight_multipanel.py
 
+python analysis/figures/plot_single_modality_performance.py
+
+python analysis/figures/plot_ablation_performance.py
+
+python analysis/figures/plot_geographic_training_regime_boxplots.py
+
 python analysis/figures/plot_probability_error_vs_match_distance.py `
   --group-space collapsed_k6 `
+  --predictions "$DATA_ROOT/final_model/ensemble_predictions.npz" `
   --shard-root "$DATA_ROOT/tree_centered_complete_shards"
 
 python analysis/figures/plot_taxon_error_vs_margin.py `
   --group-space collapsed_k6 `
+  --predictions "$DATA_ROOT/final_model/ensemble_predictions.npz" `
+  --rare-embeddings "$DATA_ROOT/discriminator/rare_taxon_embeddings.npz" `
   --shard-root "$DATA_ROOT/tree_centered_complete_shards"
 ```
 
 The discrimination-space renderer uses `--group-space collapsed_k6` for the
 reported `collapsed_k6` view and `--hybrid-legend` for the canonical hierarchy
 legend. The latter can be combined with the documented manuscript group order.
+
+The submitted four-panel modality figure combines the two-panel gate-weight
+output with the single-modality and ablation panels. Each component is generated
+from a tracked, checksummed source table. The final layout was assembled without
+altering the plotted values.
+
+The Sentinel-2 interpolation script requires explicit paths to the final split
+manifest, interpolation summaries, and complete shards; no workstation path or
+superseded partition is assumed. Its companion Node renderer accepts the
+prepared output directory as its first positional argument.
 
 ## Terminology
 

@@ -42,7 +42,7 @@ from geographic_utils import (
 ROOT = Path(__file__).resolve().parents[2]
 TRAINER = ROOT / "model" / "stage2" / "train_fixed_partition_classifier.py"
 EVALUATOR = ROOT / "model" / "stage2" / "evaluate_checkpoint_ensemble.py"
-DEFAULT_RESULT_OUTPUT = ROOT / "outputs" / "reviewer_revision" / "k11_loco_pruned_v1"
+DEFAULT_RESULT_OUTPUT = ROOT / "outputs" / "manuscript_analysis" / "leave_one_city_out"
 DEFAULT_PARTITION = ROOT / "config" / "final_k11_partition.npz"
 DEFAULT_GROUPING = ROOT / "config" / "final_grouping.json"
 DEFAULT_GEOGRAPHIC_CONFIG = ROOT / "analysis" / "geographic" / "geographic_config.json"

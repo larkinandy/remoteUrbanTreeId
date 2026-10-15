@@ -20,6 +20,8 @@ six reported groups (`collapsed_k6`) using `../../config/final_grouping.json`.
 - `analyze_gate_weight_strata.py` summarizes sample-dependent gate weights by
   height, city, city-by-height, and taxon provenance. Gate weights are not
   causal feature importance.
+- `count_final_dataset_qa_flags.py` audits the final analytical record and QA
+  counts used in the manuscript and dataset-attrition figure.
 
 Thresholds, terminology, provenance definitions, and reporting rules are
 frozen in `sensitivity_config.json`. Every script uses record-key joins and
