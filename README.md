@@ -1,11 +1,13 @@
-## Remote Urban Tree Classification
+# Multimodal Remote-Sensing Classification of Urban Trees
 
 A multimodal machine-learning pipeline for assigning urban trees to
-remote-sensing-informed taxonomic groups. The manuscript model predicts 11
+remote-sensing-derived taxonomic groups. This repository is the reproducibility
+snapshot accompanying the submitted manuscript. The final analytical dataset
+contains 1,851,968 records representing 579 taxa across 36 U.S. cities.
+
+The stage-two model predicts 11
 intermediate groups and reports six prespecified groups obtained by summing
 the corresponding class probabilities.
-
-<img src = https://github.com/larkinandy/remoteUrbanTreeId/blob/main/images/SanDiego.png width="1024">
 
 The project combines tree-crown-centered aerial imagery, LiDAR structure,
 Sentinel-2 phenology, satellite embeddings, and daily PRISM climate variables.
@@ -20,7 +22,7 @@ The current workflow has four modeling stages:
 1. A multimodal taxon discriminator learns a 64-dimensional embedding space
    from core taxa with at least 500 records.
 2. Discriminator validation embeddings are used to select and freeze 11
-   intermediate groups. Taxa with 50--499 records are subsequently assigned
+   intermediate groups. Taxa with 50–499 records are subsequently assigned
    from deterministic development-only centroids; discriminator test records
    are reserved for independent evaluation.
 3. A second multimodal model is trained to predict the 11 frozen groups using
@@ -34,7 +36,12 @@ Both label spaces are empirical collections of taxa that are separable using
 the available remotely sensed inputs. They are not formal botanical ranks or
 validated ecological functional groups.
 
-<!-- Add a current pipeline or model-architecture figure here. -->
+On the independent record-level test set, the final collapsed six-group model
+achieved 0.793 accuracy, 0.772 macro-F1, and 0.792 weighted-F1. This split
+measures performance for new records from represented cities. Separate
+leave-one-city-out and single-city-trained analyses quantify transfer to unseen
+geographic domains; their frozen summaries are stored under
+[`analysis/geographic/provenance/`](analysis/geographic/provenance/).
 
 **Reproducibility**
 
@@ -64,8 +71,6 @@ Python environment.
 - [`analysis/`](analysis/) — Manuscript ablation, geographic-generalization,
   sensitivity, gate-weight, and figure-generation analyses.
 - [`config/`](config/) — Frozen manuscript group mapping and partition artifact.
-- `modelImplementation/` — Model application and deployment workflows, if and
-  when a maintained implementation is added.
 
 **Data and model weights**
 
@@ -89,3 +94,9 @@ Python environment.
 
 - [PollenModeling](https://github.com/larkinandy/PollenModeling)
 - [UrbanTreeDetector](https://github.com/jonathanventura/urban-tree-detection)
+
+**Citation**
+
+The manuscript has been submitted to *Remote Sensing*. Complete bibliographic
+information and a versioned repository release will be added after acceptance.
+Until then, cite the repository URL and the commit hash used for reproduction.

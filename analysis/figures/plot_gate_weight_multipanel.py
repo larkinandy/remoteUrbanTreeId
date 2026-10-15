@@ -16,7 +16,7 @@ from figure_data import load_gate_weight_tables, save_figure_formats
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT = ROOT / "analysis" / "figures" / "provenance"
-DEFAULT_OUTPUT = ROOT / "outputs" / "reviewer_revision" / "final_model_gate_weight_multipanel"
+DEFAULT_OUTPUT = ROOT / "outputs" / "manuscript_figures" / "final_model_gate_weight_multipanel"
 MODALITIES = (
     "tree_centered_naip",
     "naip_chm_interaction",

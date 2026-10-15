@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "description": "Frozen schema hashes for the complete stage-two NPZ shards. The feature hash preserves names, dtypes, and non-record dimensions while ignoring only the leading dimension of arrays aligned to crop_index.",
+  "legacy_input_schema_sha256": "3332bf41f895efe1551abadc0846d85262818792125535fb44a7c7955f65b222",
+  "feature_schema_sha256": "1215c467c3750b84b13c6e266a05342b0e158ac2676d5db7a647d1304f807726"
+}

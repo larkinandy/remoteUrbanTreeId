@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Consolidate development-set results from validation-only modality pilots.
 
 These outputs support model development and are not independent-test metrics.
@@ -28,12 +28,18 @@ def provenance_path(path: Path) -> str:
 
 
 def args() -> argparse.Namespace:
-    p = argparse.ArgumentParser()
-    p.add_argument("--single-root", type=Path, required=True)
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument(
+        "--single-root",
+        type=Path,
+        required=True,
+        help="Directory containing validation-only single-modality predictions.",
+    )
     p.add_argument(
         "--reference",
         type=Path,
-        default=Path("outputs/reviewer_revision/k11_loo_without_structure_validation_top5_ensemble/ensemble_predictions.npz"),
+        required=True,
+        help="Frozen full-model validation prediction archive.",
     )
     p.add_argument(
         "--collapse",
@@ -44,7 +50,7 @@ def args() -> argparse.Namespace:
     p.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("outputs/reviewer_revision/k11_single_modality_analysis"),
+        default=Path("outputs/manuscript_analysis/single_modality_validation"),
     )
     return p.parse_args()
 

@@ -70,6 +70,12 @@ ensemble therefore occurs before the probability-sum collapse.
 sidecars are identified by stable shard filenames and remain usable after the
 dataset is moved to another drive or workstation.
 
+`final_input_schema.json` stores both the legacy row-count-sensitive shard hash
+used by the distributed checkpoints and a portable feature-schema hash that
+ignores only record-aligned row counts. This permits evaluation of city-specific
+shards after relocation while still rejecting changes to field names, dtypes,
+or feature dimensions. Newly trained checkpoints record both hashes directly.
+
 Supporting modules have deliberately narrow responsibilities:
 
 - `artifacts.py` validates frozen artifacts, split provenance, and input schema;

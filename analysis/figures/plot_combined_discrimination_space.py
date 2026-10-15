@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=root / "outputs/reviewer_revision/combined_k11_collapsed_k6_discrimination_space_hybrid_legend.svg",
+        default=root / "outputs/manuscript_figures/combined_k11_collapsed_k6_discrimination_space_hybrid_legend.svg",
     )
     return parser.parse_args()
 

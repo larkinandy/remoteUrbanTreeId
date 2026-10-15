@@ -1,11 +1,10 @@
 # Frozen geographic-analysis provenance
 
-These compact files document the completed seven-source one-city experiment
-and the QA-screened city eligibility rule used by both geographic workflows.
-`manifest.csv` records byte sizes and SHA-256 checksums.
-
-The leave-one-city-out training campaign was still running when this folder was
-created. Its final city-level and pooled tables should be frozen here only after
-every eligible city has completed and the updated QA-screened aggregation has
-been rerun. Partial LOCO summaries are intentionally not presented as final
-provenance.
+These compact files document the completed leave-one-city-out and seven-source
+one-city experiments and the QA-screened city eligibility rule used by both
+workflows. `final_training_regime_by_target_city.csv` is the source table for
+the manuscript geographic comparison, and `final_training_regime_summary.csv`
+contains the across-city summary statistics. The paired default-versus-LOCO
+results, source-city summaries, and Rancho Cucamonga spatial-error statistics
+are retained as supporting provenance. `manifest.csv` records byte sizes and
+SHA-256 checksums for every frozen artifact.

@@ -227,8 +227,15 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     manifest, shard_paths, group_names = runtime.build_manifest(args, run_args)
-    current_schema_sha256 = artifacts.npz_schema_sha256(next(iter(shard_paths.values())))
-    current_provenance = artifacts.provenance(args.split_manifest, current_schema_sha256)
+    evaluation_shard = next(iter(shard_paths.values()))
+    current_schema_sha256, current_feature_schema_sha256 = artifacts.resolve_checkpoint_schema(
+        checkpoints[0], evaluation_shard
+    )
+    current_provenance = artifacts.provenance(
+        args.split_manifest,
+        current_schema_sha256,
+        current_feature_schema_sha256,
+    )
     for path, checkpoint in zip(paths, checkpoints):
         artifacts.validate_checkpoint_provenance(
             checkpoint,

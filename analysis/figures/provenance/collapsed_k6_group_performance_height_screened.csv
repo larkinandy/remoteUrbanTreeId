@@ -1,0 +1,8 @@
+group,records,precision,recall,f1,is_reference
+All groups,153529,0.7788333333,0.7765,0.777,true
+Group 1,21327,0.830,0.908,0.867,false
+Group 2,54948,0.805,0.797,0.801,false
+Group 3,53941,0.798,0.787,0.793,false
+Group 4,7791,0.716,0.703,0.709,false
+Group 5,7826,0.779,0.795,0.787,false
+Group 6,7696,0.745,0.669,0.705,false

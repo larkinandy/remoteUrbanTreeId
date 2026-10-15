@@ -26,7 +26,8 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--predictions", type=Path,
-        default=ROOT / "outputs" / "reviewer_revision" / "final_pruned_k11_test_top5_ensemble" / "ensemble_predictions.npz",
+        required=True,
+        help="Final independent-test ensemble prediction NPZ.",
     )
     p.add_argument(
         "--shard-root", type=Path, required=True,
@@ -34,7 +35,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--output-dir", type=Path,
-        default=ROOT / "outputs" / "reviewer_revision" / "final_pruned_k11_test_match_distance_probability_error",
+        default=ROOT / "outputs" / "manuscript_figures" / "final_pruned_k11_test_match_distance_probability_error",
     )
     p.add_argument("--distance-bin-width", type=float, default=0.25)
     p.add_argument("--hexbin-gridsize", type=int, default=50)

@@ -18,6 +18,7 @@ FINAL_GROUPING_MANIFEST = CONFIG_DIR / "final_grouping.json"
 FINAL_PARTITION = CONFIG_DIR / "final_k11_partition.npz"
 FINAL_COLLAPSE = CONFIG_DIR / "final_k11_to_k6_collapse.npz"
 FINAL_MODEL_CONFIG = Path(__file__).resolve().parent / "final_model_config.json"
+FINAL_INPUT_SCHEMA = Path(__file__).resolve().parent / "final_input_schema.json"
 
 
 def sha256(path: Path) -> str:
@@ -82,13 +83,8 @@ def validate_split_manifest(path: Path) -> dict:
     return provenance
 
 
-def npz_schema_sha256(path: Path) -> str:
-    """Fingerprint NPZ names, shapes, and dtypes without loading array payloads.
-
-    Complete legacy shards include object-typed metadata arrays. Reading only
-    each embedded NPY header avoids deserializing those objects while still
-    producing the same schema representation used for provenance checks.
-    """
+def _npz_schema(path: Path, *, ignore_record_count: bool = False) -> list[dict]:
+    """Return NPZ names, shapes, and dtypes without loading array payloads."""
     schema = []
     with zipfile.ZipFile(path) as archive:
         members = sorted(name for name in archive.namelist() if name.endswith(".npy"))
@@ -110,13 +106,103 @@ def npz_schema_sha256(path: Path) -> str:
                     "dtype": str(dtype),
                 }
             )
+    if ignore_record_count:
+        record_rows = next(
+            (
+                int(item["shape"][0])
+                for item in schema
+                if item["name"] == "crop_index" and item["shape"]
+            ),
+            None,
+        )
+        if record_rows is None:
+            raise ValueError(f"Cannot identify the record dimension in {path}")
+        for item in schema:
+            if item["shape"] and int(item["shape"][0]) == record_rows:
+                item["shape"][0] = None
+    return schema
+
+
+def _schema_sha256(schema: list[dict]) -> str:
     encoded = json.dumps(schema, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def npz_schema_sha256(path: Path) -> str:
+    """Fingerprint the legacy NPZ schema, including its record count.
+
+    Complete legacy shards include object-typed metadata arrays. Reading only
+    each embedded NPY header avoids deserializing those objects while still
+    producing the same schema representation used for provenance checks.
+    """
+    return _schema_sha256(_npz_schema(path))
+
+
+def npz_feature_schema_sha256(path: Path) -> str:
+    """Fingerprint feature dimensions and dtypes while ignoring row count."""
+    return _schema_sha256(_npz_schema(path, ignore_record_count=True))
+
+
+def load_final_input_schema(path: Path = FINAL_INPUT_SCHEMA) -> dict:
+    """Load the portable frozen schema for the distributed stage-two inputs."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    required = {
+        "legacy_input_schema_sha256",
+        "feature_schema_sha256",
+    }
+    missing = required - payload.keys()
+    if missing:
+        raise ValueError(f"Missing final input-schema fields: {sorted(missing)}")
+    return payload
+
+
+def resolve_checkpoint_schema(checkpoint: dict, evaluation_shard: Path) -> tuple[str, str]:
+    """Return a checkpoint-compatible schema hash for a compatible eval shard.
+
+    Older checkpoints included the first shard's row count in the schema hash.
+    The frozen schema manifest permits validation of city-specific shards with
+    different row counts without requiring the original workstation path.
+    """
+    recorded_provenance = checkpoint.get("provenance") or {}
+    recorded_legacy = recorded_provenance.get("input_schema_sha256")
+    recorded_feature = recorded_provenance.get("input_feature_schema_sha256")
+    observed_legacy = npz_schema_sha256(evaluation_shard)
+    observed_feature = npz_feature_schema_sha256(evaluation_shard)
+
+    if recorded_feature is not None:
+        if recorded_feature != observed_feature:
+            raise RuntimeError(
+                "Checkpoint and evaluation shards have different feature schemas: "
+                f"checkpoint={recorded_feature}, evaluation={observed_feature}"
+            )
+        return str(recorded_legacy or observed_legacy), observed_feature
+
+    if recorded_legacy is None or recorded_legacy == observed_legacy:
+        return observed_legacy, observed_feature
+
+    frozen = load_final_input_schema()
+    if recorded_legacy != frozen["legacy_input_schema_sha256"]:
+        raise RuntimeError(
+            "Legacy checkpoint schema is not the frozen final-model schema: "
+            f"checkpoint={recorded_legacy}"
+        )
+    if observed_feature != frozen["feature_schema_sha256"]:
+        raise RuntimeError(
+            "Evaluation shard does not match the frozen final-model feature schema: "
+            f"expected={frozen['feature_schema_sha256']}, observed={observed_feature}"
+        )
+    print(
+        "WARNING: accepted a row-count-only legacy input-schema mismatch after "
+        "validation against model/stage2/final_input_schema.json.",
+        flush=True,
+    )
+    return str(recorded_legacy), observed_feature
 
 
 def provenance(
     split_manifest: Path | None = None,
     input_schema_sha256: str | None = None,
+    input_feature_schema_sha256: str | None = None,
 ) -> dict[str, str | None]:
     """Return checksums sufficient to identify a stage-two reproduction run."""
     return {
@@ -124,8 +210,10 @@ def provenance(
         "partition_sha256": sha256(FINAL_PARTITION),
         "collapse_sha256": sha256(FINAL_COLLAPSE),
         "final_model_config_sha256": sha256(FINAL_MODEL_CONFIG),
+        "input_schema_manifest_sha256": sha256(FINAL_INPUT_SCHEMA),
         "split_manifest_sha256": None if split_manifest is None else sha256(split_manifest),
         "input_schema_sha256": input_schema_sha256,
+        "input_feature_schema_sha256": input_feature_schema_sha256,
     }
 
 
