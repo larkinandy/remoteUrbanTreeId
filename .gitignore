@@ -15,6 +15,18 @@
 # ignore dot-prefixed directories at any depth
 .*/
 
+# Local ChatGPT/Codex state is covered by .*/ above (including .codex/,
+# .agents/, and .chatgpt/). Keep shared AGENTS.md instructions trackable.
+AGENTS.local.md
+/codex-notes.md
+/chatgpt-notes.md
+
+# Local assistant exports, previews, and scratch work. Keep these at the
+# repository root; project source, images, and provenance remain trackable.
+/artifacts/
+/tmp/
+/temp/
+
 # local archive of superseded development and diagnostic scripts
 /.private_archive/
 
