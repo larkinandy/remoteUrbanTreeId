@@ -1,0 +1,464 @@
+[
+  {
+    "model": "Default multimodal",
+    "target_city": "auroraco",
+    "accuracy": 0.8746659540352753,
+    "macro_f1": 0.8428159612349434,
+    "weighted_f1": 0.8736144824592786
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "baltimore",
+    "accuracy": 0.7278507842306062,
+    "macro_f1": 0.5637751707782102,
+    "weighted_f1": 0.7256966082126074
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "buffalo",
+    "accuracy": 0.7510040160642569,
+    "macro_f1": 0.6903899812007859,
+    "weighted_f1": 0.7380930780187489
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "capecoral",
+    "accuracy": 0.9553824362606232,
+    "macro_f1": 0.5316553872596412,
+    "weighted_f1": 0.9477567871964048
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "columbus",
+    "accuracy": 0.7949585518524784,
+    "macro_f1": 0.7642884982798481,
+    "weighted_f1": 0.7933439918998537
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "denver",
+    "accuracy": 0.7952276888547635,
+    "macro_f1": 0.4428955197110754,
+    "weighted_f1": 0.7910638457600515
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "gardengrove",
+    "accuracy": 0.8590350047303689,
+    "macro_f1": 0.6960038022632501,
+    "weighted_f1": 0.8529587057419393
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "huntingtonbeach",
+    "accuracy": 0.8606847697756789,
+    "macro_f1": 0.6183023439504188,
+    "weighted_f1": 0.8410315999656169
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "lasvegas",
+    "accuracy": 0.7895007720020587,
+    "macro_f1": 0.7385678013287331,
+    "weighted_f1": 0.7769565142450935
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "louisville",
+    "accuracy": 0.7491349480968859,
+    "macro_f1": 0.6603239106886318,
+    "weighted_f1": 0.7392815589860552
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "madison",
+    "accuracy": 0.8306351183063512,
+    "macro_f1": 0.6728992814291743,
+    "weighted_f1": 0.82710722523616
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "newyork",
+    "accuracy": 0.8111504547663682,
+    "macro_f1": 0.5107129545025859,
+    "weighted_f1": 0.8095826737972213
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "pittsburgh",
+    "accuracy": 0.7843980343980343,
+    "macro_f1": 0.7126842203562875,
+    "weighted_f1": 0.7772875076009834
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "portland",
+    "accuracy": 0.8350125944584383,
+    "macro_f1": 0.4867558048419604,
+    "weighted_f1": 0.8203839603882472
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "ranchocucamonga",
+    "accuracy": 0.7888100866824271,
+    "macro_f1": 0.7349064650477802,
+    "weighted_f1": 0.7830992133886449
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "sandiego",
+    "accuracy": 0.8412732784755306,
+    "macro_f1": 0.5536157691155149,
+    "weighted_f1": 0.823009979336763
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "sanfrancisco",
+    "accuracy": 0.8306569343065694,
+    "macro_f1": 0.598020075059907,
+    "weighted_f1": 0.8142699807962205
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "sanjose",
+    "accuracy": 0.7289190366544278,
+    "macro_f1": 0.7052898996277582,
+    "weighted_f1": 0.7221230694275409
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "seattle",
+    "accuracy": 0.8332868303571429,
+    "macro_f1": 0.5064317476502694,
+    "weighted_f1": 0.8188273323784906
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "siouxfalls",
+    "accuracy": 0.8869974646867077,
+    "macro_f1": 0.8643635468923847,
+    "weighted_f1": 0.8863399722490545
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "stlouis",
+    "accuracy": 0.7657019704433498,
+    "macro_f1": 0.634435938116303,
+    "weighted_f1": 0.7642181895843937
+  },
+  {
+    "model": "Default multimodal",
+    "target_city": "washingtondc",
+    "accuracy": 0.7517472192144895,
+    "macro_f1": 0.5055055679410564,
+    "weighted_f1": 0.7435287555920436
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "auroraco",
+    "accuracy": 0.7883484767504009,
+    "macro_f1": 0.7390919272693576,
+    "weighted_f1": 0.77970300561039
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "baltimore",
+    "accuracy": 0.6379821958456974,
+    "macro_f1": 0.3853935384649951,
+    "weighted_f1": 0.628838252850061
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "buffalo",
+    "accuracy": 0.6242111302352267,
+    "macro_f1": 0.3625758776643603,
+    "weighted_f1": 0.5921585265483914
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "capecoral",
+    "accuracy": 0.4971671388101983,
+    "macro_f1": 0.2130816194513145,
+    "weighted_f1": 0.6365692595020132
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "columbus",
+    "accuracy": 0.7188293013026561,
+    "macro_f1": 0.6713964778907494,
+    "weighted_f1": 0.7192044072542121
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "denver",
+    "accuracy": 0.7044474632331227,
+    "macro_f1": 0.3656551001220922,
+    "weighted_f1": 0.706717964621926
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "gardengrove",
+    "accuracy": 0.8145695364238411,
+    "macro_f1": 0.6349915272121397,
+    "weighted_f1": 0.8050753232068707
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "huntingtonbeach",
+    "accuracy": 0.8022432113341205,
+    "macro_f1": 0.4807456713619413,
+    "weighted_f1": 0.775120306357396
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "lasvegas",
+    "accuracy": 0.4806999485331961,
+    "macro_f1": 0.4639539131811853,
+    "weighted_f1": 0.5178430086933428
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "louisville",
+    "accuracy": 0.6914648212226068,
+    "macro_f1": 0.5502116955383133,
+    "weighted_f1": 0.6827542928727836
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "madison",
+    "accuracy": 0.7357409713574097,
+    "macro_f1": 0.5728959892847313,
+    "weighted_f1": 0.7364311351687353
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "newyork",
+    "accuracy": 0.6820106922168993,
+    "macro_f1": 0.4132476597409651,
+    "weighted_f1": 0.6821596221455238
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "pittsburgh",
+    "accuracy": 0.7303439803439803,
+    "macro_f1": 0.6405505083655624,
+    "weighted_f1": 0.7257383855900458
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "portland",
+    "accuracy": 0.6989084802686817,
+    "macro_f1": 0.3491672680026059,
+    "weighted_f1": 0.7169802267751594
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "ranchocucamonga",
+    "accuracy": 0.6367218282111899,
+    "macro_f1": 0.5050528915931293,
+    "weighted_f1": 0.6161016682327034
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "sandiego",
+    "accuracy": 0.7597444781290602,
+    "macro_f1": 0.3606076305234925,
+    "weighted_f1": 0.7372417334745371
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "sanfrancisco",
+    "accuracy": 0.7467153284671534,
+    "macro_f1": 0.3621635515407733,
+    "weighted_f1": 0.712180734473154
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "sanjose",
+    "accuracy": 0.4759474765075611,
+    "macro_f1": 0.4607188234094301,
+    "weighted_f1": 0.47069872108033434
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "seattle",
+    "accuracy": 0.7978515625,
+    "macro_f1": 0.3642033665472646,
+    "weighted_f1": 0.771626259766062
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "siouxfalls",
+    "accuracy": 0.7515392973560304,
+    "macro_f1": 0.7259180876640846,
+    "weighted_f1": 0.7492995965786096
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "stlouis",
+    "accuracy": 0.6677955665024631,
+    "macro_f1": 0.5496893797853876,
+    "weighted_f1": 0.6644182015624753
+  },
+  {
+    "model": "Leave one city out",
+    "target_city": "washingtondc",
+    "accuracy": 0.6264396101978541,
+    "macro_f1": 0.2811623122214388,
+    "weighted_f1": 0.6080358250772347
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "auroraco",
+    "accuracy": 0.4647247461250668,
+    "macro_f1": 0.34449032483232334,
+    "weighted_f1": 0.4502685573601544
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "baltimore",
+    "accuracy": 0.43204344052160926,
+    "macro_f1": 0.1756143594844755,
+    "weighted_f1": 0.4135123066036677
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "buffalo",
+    "accuracy": 0.4265224161953938,
+    "macro_f1": 0.21893760737153461,
+    "weighted_f1": 0.41209581160288533
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "capecoral",
+    "accuracy": 0.16855524079320108,
+    "macro_f1": 0.07847972338690955,
+    "weighted_f1": 0.20377741392549378
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "columbus",
+    "accuracy": 0.39381782149503347,
+    "macro_f1": 0.2523382712244372,
+    "weighted_f1": 0.3764801974643359
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "denver",
+    "accuracy": 0.3934794164550233,
+    "macro_f1": 0.13310426097594188,
+    "weighted_f1": 0.356195092629562
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "gardengrove",
+    "accuracy": 0.25530477091498843,
+    "macro_f1": 0.1575400691337335,
+    "weighted_f1": 0.23636990898971735
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "huntingtonbeach",
+    "accuracy": 0.23216393995614773,
+    "macro_f1": 0.1170582407426755,
+    "weighted_f1": 0.2389322284228433
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "lasvegas",
+    "accuracy": 0.13940151459451505,
+    "macro_f1": 0.1458177441953005,
+    "weighted_f1": 0.11399937520830658
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "louisville",
+    "accuracy": 0.4718240237271379,
+    "macro_f1": 0.24565648235001886,
+    "weighted_f1": 0.45678919760741027
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "madison",
+    "accuracy": 0.2914783846290695,
+    "macro_f1": 0.23007909718391126,
+    "weighted_f1": 0.31873614500103215
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "newyork",
+    "accuracy": 0.38744904335406316,
+    "macro_f1": 0.1801818085141392,
+    "weighted_f1": 0.3691946003996019
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "pittsburgh",
+    "accuracy": 0.39627939627939623,
+    "macro_f1": 0.24166020573408262,
+    "weighted_f1": 0.3931202123083266
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "portland",
+    "accuracy": 0.4269941225860621,
+    "macro_f1": 0.16105769125276495,
+    "weighted_f1": 0.45277424250398823
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "ranchocucamonga",
+    "accuracy": 0.2048419577970405,
+    "macro_f1": 0.14739593309501042,
+    "weighted_f1": 0.1548589184564088
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "sandiego",
+    "accuracy": 0.25046402276805046,
+    "macro_f1": 0.12220187961689763,
+    "weighted_f1": 0.2610681917052042
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "sanfrancisco",
+    "accuracy": 0.2866788321167883,
+    "macro_f1": 0.15167793058863746,
+    "weighted_f1": 0.2443611292268184
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "sanjose",
+    "accuracy": 0.23320264691849726,
+    "macro_f1": 0.15926023060556704,
+    "weighted_f1": 0.1657871599000013
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "seattle",
+    "accuracy": 0.4719819568452381,
+    "macro_f1": 0.1758193751698194,
+    "weighted_f1": 0.4996146516773609
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "siouxfalls",
+    "accuracy": 0.4213794173953537,
+    "macro_f1": 0.2872584906171222,
+    "weighted_f1": 0.4140044440011112
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "stlouis",
+    "accuracy": 0.3696120689655172,
+    "macro_f1": 0.23735577423419815,
+    "weighted_f1": 0.3754927465856622
+  },
+  {
+    "model": "One-city trained",
+    "target_city": "washingtondc",
+    "accuracy": 0.4182779519919002,
+    "macro_f1": 0.15638010097891591,
+    "weighted_f1": 0.4061570695006825
+  }
+]

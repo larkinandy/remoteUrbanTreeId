@@ -1,0 +1,16 @@
+{
+  "label_space": "reported_k6",
+  "population": "Height-screened independent test subset",
+  "records": 153529,
+  "source": "User-provided manuscript confusion-matrix figure, 2026-10-17",
+  "rows": "Labeled group",
+  "columns": "Predicted group",
+  "counts": [
+    [19361, 295, 383, 717, 268, 303],
+    [1073, 43821, 8213, 480, 589, 772],
+    [1027, 8366, 42467, 799, 706, 576],
+    [1029, 507, 591, 5476, 127, 61],
+    [259, 414, 811, 77, 6220, 45],
+    [589, 1053, 734, 101, 74, 5145]
+  ]
+}

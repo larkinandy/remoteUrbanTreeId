@@ -1,0 +1,326 @@
+[
+  {
+    "token": "albuquerque",
+    "city": "Albuquerque",
+    "state": "NM",
+    "records": 1569,
+    "latitude": 35.10478,
+    "longitude": -106.646809,
+    "census_geoid": "3502000"
+  },
+  {
+    "token": "anaheim",
+    "city": "Anaheim",
+    "state": "CA",
+    "records": 7659,
+    "latitude": 33.855502,
+    "longitude": -117.758657,
+    "census_geoid": "0602000"
+  },
+  {
+    "token": "arlington",
+    "city": "Arlington",
+    "state": "TX",
+    "records": 4498,
+    "latitude": 32.700708,
+    "longitude": -97.124691,
+    "census_geoid": "4804000"
+  },
+  {
+    "token": "atlanta",
+    "city": "Atlanta",
+    "state": "GA",
+    "records": 9819,
+    "latitude": 33.762909,
+    "longitude": -84.422675,
+    "census_geoid": "1304000"
+  },
+  {
+    "token": "auroraco",
+    "city": "Aurora",
+    "state": "CO",
+    "records": 43353,
+    "latitude": 39.709537,
+    "longitude": -104.720509,
+    "census_geoid": "0804000"
+  },
+  {
+    "token": "austin",
+    "city": "Austin",
+    "state": "TX",
+    "records": 2595,
+    "latitude": 30.298622,
+    "longitude": -97.754134,
+    "census_geoid": "4805000"
+  },
+  {
+    "token": "baltimore",
+    "city": "Baltimore",
+    "state": "MD",
+    "records": 82768,
+    "latitude": 39.300032,
+    "longitude": -76.610476,
+    "census_geoid": "2404000"
+  },
+  {
+    "token": "buffalo",
+    "city": "Buffalo",
+    "state": "NY",
+    "records": 21668,
+    "latitude": 42.892492,
+    "longitude": -78.859686,
+    "census_geoid": "3611000"
+  },
+  {
+    "token": "capecoral",
+    "city": "Cape Coral",
+    "state": "FL",
+    "records": 9893,
+    "latitude": 26.643192,
+    "longitude": -81.997364,
+    "census_geoid": "1210275"
+  },
+  {
+    "token": "coloradosprings",
+    "city": "Colorado Springs",
+    "state": "CO",
+    "records": 7978,
+    "latitude": 38.867255,
+    "longitude": -104.760749,
+    "census_geoid": "0816000"
+  },
+  {
+    "token": "columbus",
+    "city": "Columbus",
+    "state": "OH",
+    "records": 68025,
+    "latitude": 39.983938,
+    "longitude": -82.984882,
+    "census_geoid": "3918000"
+  },
+  {
+    "token": "denver",
+    "city": "Denver",
+    "state": "CO",
+    "records": 189219,
+    "latitude": 39.76185,
+    "longitude": -104.881105,
+    "census_geoid": "0820000"
+  },
+  {
+    "token": "desmoines",
+    "city": "Newton",
+    "state": "IA",
+    "records": 7559,
+    "latitude": 41.696337,
+    "longitude": -93.040512,
+    "census_geoid": "1956505"
+  },
+  {
+    "token": "detroit",
+    "city": "Detroit",
+    "state": "MI",
+    "records": 6588,
+    "latitude": 42.383037,
+    "longitude": -83.102237,
+    "census_geoid": "2622000"
+  },
+  {
+    "token": "gardengrove",
+    "city": "Garden Grove",
+    "state": "CA",
+    "records": 11242,
+    "latitude": 33.778782,
+    "longitude": -117.960472,
+    "census_geoid": "0629000"
+  },
+  {
+    "token": "huntingtonbeach",
+    "city": "Huntington Beach",
+    "state": "CA",
+    "records": 16187,
+    "latitude": 33.698007,
+    "longitude": -118.003834,
+    "census_geoid": "0636000"
+  },
+  {
+    "token": "knoxville",
+    "city": "Knoxville",
+    "state": "TN",
+    "records": 3270,
+    "latitude": 35.97068,
+    "longitude": -83.94927,
+    "census_geoid": "4740000"
+  },
+  {
+    "token": "lasvegas",
+    "city": "Las Vegas",
+    "state": "NV",
+    "records": 17858,
+    "latitude": 36.233499,
+    "longitude": -115.264037,
+    "census_geoid": "3240000"
+  },
+  {
+    "token": "louisville",
+    "city": "Louisville",
+    "state": "KY",
+    "records": 17496,
+    "latitude": 38.224728,
+    "longitude": -85.740614,
+    "census_geoid": "2148000"
+  },
+  {
+    "token": "madison",
+    "city": "Madison",
+    "state": "WI",
+    "records": 48474,
+    "latitude": 43.087815,
+    "longitude": -89.429856,
+    "census_geoid": "5548000"
+  },
+  {
+    "token": "milwaukee",
+    "city": "Milwaukee",
+    "state": "WI",
+    "records": 8523,
+    "latitude": 43.063348,
+    "longitude": -87.966695,
+    "census_geoid": "5553000"
+  },
+  {
+    "token": "newyork",
+    "city": "New York",
+    "state": "NY",
+    "records": 381809,
+    "latitude": 40.662712,
+    "longitude": -73.938677,
+    "census_geoid": "3651000"
+  },
+  {
+    "token": "oklahomacity",
+    "city": "Oklahoma City",
+    "state": "OK",
+    "records": 5428,
+    "latitude": 35.467079,
+    "longitude": -97.513657,
+    "census_geoid": "4055000"
+  },
+  {
+    "token": "pittsburgh",
+    "city": "Pittsburgh",
+    "state": "PA",
+    "records": 18961,
+    "latitude": 40.439936,
+    "longitude": -79.975676,
+    "census_geoid": "4261000"
+  },
+  {
+    "token": "portland",
+    "city": "Portland",
+    "state": "OR",
+    "records": 135590,
+    "latitude": 45.536951,
+    "longitude": -122.649971,
+    "census_geoid": "4159000"
+  },
+  {
+    "token": "providence",
+    "city": "Providence",
+    "state": "RI",
+    "records": 1769,
+    "latitude": 41.823056,
+    "longitude": -71.418784,
+    "census_geoid": "4459000"
+  },
+  {
+    "token": "ranchocucamonga",
+    "city": "Rancho Cucamonga",
+    "state": "CA",
+    "records": 42838,
+    "latitude": 34.130306,
+    "longitude": -117.566067,
+    "census_geoid": "0659451"
+  },
+  {
+    "token": "rochester",
+    "city": "Rochester",
+    "state": "NY",
+    "records": 1177,
+    "latitude": 43.169927,
+    "longitude": -77.616891,
+    "census_geoid": "3663000"
+  },
+  {
+    "token": "sandiego",
+    "city": "San Diego",
+    "state": "CA",
+    "records": 106192,
+    "latitude": 32.814977,
+    "longitude": -117.135562,
+    "census_geoid": "0666000"
+  },
+  {
+    "token": "sanfrancisco",
+    "city": "San Francisco",
+    "state": "CA",
+    "records": 55840,
+    "latitude": 37.727239,
+    "longitude": -123.032229,
+    "census_geoid": "0667000"
+  },
+  {
+    "token": "sanjose",
+    "city": "San Jose",
+    "state": "CA",
+    "records": 176891,
+    "latitude": 37.296011,
+    "longitude": -121.814552,
+    "census_geoid": "0668000"
+  },
+  {
+    "token": "santarosa",
+    "city": "Santa Rosa",
+    "state": "CA",
+    "records": 266,
+    "latitude": 38.445824,
+    "longitude": -122.706181,
+    "census_geoid": "0670098"
+  },
+  {
+    "token": "seattle",
+    "city": "Seattle",
+    "state": "WA",
+    "records": 73002,
+    "latitude": 47.619335,
+    "longitude": -122.351538,
+    "census_geoid": "5363000"
+  },
+  {
+    "token": "siouxfalls",
+    "city": "Sioux Falls",
+    "state": "SD",
+    "records": 33050,
+    "latitude": 43.540696,
+    "longitude": -96.731962,
+    "census_geoid": "4659020"
+  },
+  {
+    "token": "stlouis",
+    "city": "St. Louis",
+    "state": "MO",
+    "records": 44846,
+    "latitude": 38.635699,
+    "longitude": -90.244582,
+    "census_geoid": "2965000"
+  },
+  {
+    "token": "washingtondc",
+    "city": "Washington DC",
+    "state": "DC",
+    "records": 130568,
+    "latitude": 38.904247,
+    "longitude": -77.016517,
+    "census_geoid": "1150000"
+  }
+]
