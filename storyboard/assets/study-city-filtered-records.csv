@@ -1,37 +1,37 @@
-city_token,city,state,filtered_records
-albuquerque,Albuquerque,NM,1569
-anaheim,Anaheim,CA,7659
-arlington,Arlington,TX,4498
-atlanta,Atlanta,GA,9819
-auroraco,Aurora,CO,43353
-austin,Austin,TX,2595
-baltimore,Baltimore,MD,82768
-buffalo,Buffalo,NY,21668
-capecoral,Cape Coral,FL,9893
-coloradosprings,Colorado Springs,CO,7978
-columbus,Columbus,OH,68025
-denver,Denver,CO,189219
-desmoines,Newton,IA,7559
-detroit,Detroit,MI,6588
-gardengrove,Garden Grove,CA,11242
-huntingtonbeach,Huntington Beach,CA,16187
-knoxville,Knoxville,TN,3270
-lasvegas,Las Vegas,NV,17858
-louisville,Louisville,KY,17496
-madison,Madison,WI,48474
-milwaukee,Milwaukee,WI,8523
-newyork,New York,NY,381809
-oklahomacity,Oklahoma City,OK,5428
-pittsburgh,Pittsburgh,PA,18961
-portland,Portland,OR,135590
-providence,Providence,RI,1769
-ranchocucamonga,Rancho Cucamonga,CA,42838
-rochester,Rochester,NY,1177
-sandiego,San Diego,CA,106192
-sanfrancisco,San Francisco,CA,55840
-sanjose,San Jose,CA,176891
-santarosa,Santa Rosa,CA,266
-seattle,Seattle,WA,73002
-siouxfalls,Sioux Falls,SD,33050
-stlouis,St. Louis,MO,44846
-washingtondc,Washington DC,DC,130568
+city_token,city,state,core_records,rare_records,filtered_records
+albuquerque,Albuquerque,NM,1569,213,1782
+anaheim,Anaheim,CA,7659,564,8223
+arlington,Arlington,TX,4498,537,5035
+atlanta,Atlanta,GA,9819,919,10738
+auroraco,Aurora,CO,43353,772,44125
+austin,Austin,TX,2595,515,3110
+baltimore,Baltimore,MD,82768,2092,84860
+buffalo,Buffalo,NY,21668,761,22429
+capecoral,Cape Coral,FL,9893,3299,13192
+coloradosprings,Colorado Springs,CO,7978,247,8225
+columbus,Columbus,OH,68025,1673,69698
+denver,Denver,CO,189219,6147,195366
+desmoines,Newton,IA,7559,274,7833
+detroit,Detroit,MI,6588,58,6646
+gardengrove,Garden Grove,CA,11242,802,12044
+huntingtonbeach,Huntington Beach,CA,16187,1921,18108
+knoxville,Knoxville,TN,3270,189,3459
+lasvegas,Las Vegas,NV,17858,2601,20459
+louisville,Louisville,KY,17496,1574,19070
+madison,Madison,WI,48474,576,49050
+milwaukee,Milwaukee,WI,8523,273,8796
+newyork,New York,NY,381809,2110,383919
+oklahomacity,Oklahoma City,OK,5428,171,5599
+pittsburgh,Pittsburgh,PA,18961,265,19226
+portland,Portland,OR,135590,3178,138768
+providence,Providence,RI,1769,11,1780
+ranchocucamonga,Rancho Cucamonga,CA,42838,1800,44638
+rochester,Rochester,NY,1177,35,1212
+sandiego,San Diego,CA,106192,4087,110279
+sanfrancisco,San Francisco,CA,55840,4563,60403
+sanjose,San Jose,CA,176891,6665,183556
+santarosa,Santa Rosa,CA,266,28,294
+seattle,Seattle,WA,73002,6462,79464
+siouxfalls,Sioux Falls,SD,33050,251,33301
+stlouis,St. Louis,MO,44846,297,45143
+washingtondc,Washington DC,DC,130568,1570,132138

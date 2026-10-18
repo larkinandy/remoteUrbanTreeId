@@ -3,324 +3,396 @@
     "token": "albuquerque",
     "city": "Albuquerque",
     "state": "NM",
-    "records": 1569,
+    "records": 1782,
     "latitude": 35.10478,
     "longitude": -106.646809,
-    "census_geoid": "3502000"
+    "census_geoid": "3502000",
+    "core_records": 1569,
+    "rare_records": 213
   },
   {
     "token": "anaheim",
     "city": "Anaheim",
     "state": "CA",
-    "records": 7659,
+    "records": 8223,
     "latitude": 33.855502,
     "longitude": -117.758657,
-    "census_geoid": "0602000"
+    "census_geoid": "0602000",
+    "core_records": 7659,
+    "rare_records": 564
   },
   {
     "token": "arlington",
     "city": "Arlington",
     "state": "TX",
-    "records": 4498,
+    "records": 5035,
     "latitude": 32.700708,
     "longitude": -97.124691,
-    "census_geoid": "4804000"
+    "census_geoid": "4804000",
+    "core_records": 4498,
+    "rare_records": 537
   },
   {
     "token": "atlanta",
     "city": "Atlanta",
     "state": "GA",
-    "records": 9819,
+    "records": 10738,
     "latitude": 33.762909,
     "longitude": -84.422675,
-    "census_geoid": "1304000"
+    "census_geoid": "1304000",
+    "core_records": 9819,
+    "rare_records": 919
   },
   {
     "token": "auroraco",
     "city": "Aurora",
     "state": "CO",
-    "records": 43353,
+    "records": 44125,
     "latitude": 39.709537,
     "longitude": -104.720509,
-    "census_geoid": "0804000"
+    "census_geoid": "0804000",
+    "core_records": 43353,
+    "rare_records": 772
   },
   {
     "token": "austin",
     "city": "Austin",
     "state": "TX",
-    "records": 2595,
+    "records": 3110,
     "latitude": 30.298622,
     "longitude": -97.754134,
-    "census_geoid": "4805000"
+    "census_geoid": "4805000",
+    "core_records": 2595,
+    "rare_records": 515
   },
   {
     "token": "baltimore",
     "city": "Baltimore",
     "state": "MD",
-    "records": 82768,
+    "records": 84860,
     "latitude": 39.300032,
     "longitude": -76.610476,
-    "census_geoid": "2404000"
+    "census_geoid": "2404000",
+    "core_records": 82768,
+    "rare_records": 2092
   },
   {
     "token": "buffalo",
     "city": "Buffalo",
     "state": "NY",
-    "records": 21668,
+    "records": 22429,
     "latitude": 42.892492,
     "longitude": -78.859686,
-    "census_geoid": "3611000"
+    "census_geoid": "3611000",
+    "core_records": 21668,
+    "rare_records": 761
   },
   {
     "token": "capecoral",
     "city": "Cape Coral",
     "state": "FL",
-    "records": 9893,
+    "records": 13192,
     "latitude": 26.643192,
     "longitude": -81.997364,
-    "census_geoid": "1210275"
+    "census_geoid": "1210275",
+    "core_records": 9893,
+    "rare_records": 3299
   },
   {
     "token": "coloradosprings",
     "city": "Colorado Springs",
     "state": "CO",
-    "records": 7978,
+    "records": 8225,
     "latitude": 38.867255,
     "longitude": -104.760749,
-    "census_geoid": "0816000"
+    "census_geoid": "0816000",
+    "core_records": 7978,
+    "rare_records": 247
   },
   {
     "token": "columbus",
     "city": "Columbus",
     "state": "OH",
-    "records": 68025,
+    "records": 69698,
     "latitude": 39.983938,
     "longitude": -82.984882,
-    "census_geoid": "3918000"
+    "census_geoid": "3918000",
+    "core_records": 68025,
+    "rare_records": 1673
   },
   {
     "token": "denver",
     "city": "Denver",
     "state": "CO",
-    "records": 189219,
+    "records": 195366,
     "latitude": 39.76185,
     "longitude": -104.881105,
-    "census_geoid": "0820000"
+    "census_geoid": "0820000",
+    "core_records": 189219,
+    "rare_records": 6147
   },
   {
     "token": "desmoines",
     "city": "Newton",
     "state": "IA",
-    "records": 7559,
+    "records": 7833,
     "latitude": 41.696337,
     "longitude": -93.040512,
-    "census_geoid": "1956505"
+    "census_geoid": "1956505",
+    "core_records": 7559,
+    "rare_records": 274
   },
   {
     "token": "detroit",
     "city": "Detroit",
     "state": "MI",
-    "records": 6588,
+    "records": 6646,
     "latitude": 42.383037,
     "longitude": -83.102237,
-    "census_geoid": "2622000"
+    "census_geoid": "2622000",
+    "core_records": 6588,
+    "rare_records": 58
   },
   {
     "token": "gardengrove",
     "city": "Garden Grove",
     "state": "CA",
-    "records": 11242,
+    "records": 12044,
     "latitude": 33.778782,
     "longitude": -117.960472,
-    "census_geoid": "0629000"
+    "census_geoid": "0629000",
+    "core_records": 11242,
+    "rare_records": 802
   },
   {
     "token": "huntingtonbeach",
     "city": "Huntington Beach",
     "state": "CA",
-    "records": 16187,
+    "records": 18108,
     "latitude": 33.698007,
     "longitude": -118.003834,
-    "census_geoid": "0636000"
+    "census_geoid": "0636000",
+    "core_records": 16187,
+    "rare_records": 1921
   },
   {
     "token": "knoxville",
     "city": "Knoxville",
     "state": "TN",
-    "records": 3270,
+    "records": 3459,
     "latitude": 35.97068,
     "longitude": -83.94927,
-    "census_geoid": "4740000"
+    "census_geoid": "4740000",
+    "core_records": 3270,
+    "rare_records": 189
   },
   {
     "token": "lasvegas",
     "city": "Las Vegas",
     "state": "NV",
-    "records": 17858,
+    "records": 20459,
     "latitude": 36.233499,
     "longitude": -115.264037,
-    "census_geoid": "3240000"
+    "census_geoid": "3240000",
+    "core_records": 17858,
+    "rare_records": 2601
   },
   {
     "token": "louisville",
     "city": "Louisville",
     "state": "KY",
-    "records": 17496,
+    "records": 19070,
     "latitude": 38.224728,
     "longitude": -85.740614,
-    "census_geoid": "2148000"
+    "census_geoid": "2148000",
+    "core_records": 17496,
+    "rare_records": 1574
   },
   {
     "token": "madison",
     "city": "Madison",
     "state": "WI",
-    "records": 48474,
+    "records": 49050,
     "latitude": 43.087815,
     "longitude": -89.429856,
-    "census_geoid": "5548000"
+    "census_geoid": "5548000",
+    "core_records": 48474,
+    "rare_records": 576
   },
   {
     "token": "milwaukee",
     "city": "Milwaukee",
     "state": "WI",
-    "records": 8523,
+    "records": 8796,
     "latitude": 43.063348,
     "longitude": -87.966695,
-    "census_geoid": "5553000"
+    "census_geoid": "5553000",
+    "core_records": 8523,
+    "rare_records": 273
   },
   {
     "token": "newyork",
     "city": "New York",
     "state": "NY",
-    "records": 381809,
+    "records": 383919,
     "latitude": 40.662712,
     "longitude": -73.938677,
-    "census_geoid": "3651000"
+    "census_geoid": "3651000",
+    "core_records": 381809,
+    "rare_records": 2110
   },
   {
     "token": "oklahomacity",
     "city": "Oklahoma City",
     "state": "OK",
-    "records": 5428,
+    "records": 5599,
     "latitude": 35.467079,
     "longitude": -97.513657,
-    "census_geoid": "4055000"
+    "census_geoid": "4055000",
+    "core_records": 5428,
+    "rare_records": 171
   },
   {
     "token": "pittsburgh",
     "city": "Pittsburgh",
     "state": "PA",
-    "records": 18961,
+    "records": 19226,
     "latitude": 40.439936,
     "longitude": -79.975676,
-    "census_geoid": "4261000"
+    "census_geoid": "4261000",
+    "core_records": 18961,
+    "rare_records": 265
   },
   {
     "token": "portland",
     "city": "Portland",
     "state": "OR",
-    "records": 135590,
+    "records": 138768,
     "latitude": 45.536951,
     "longitude": -122.649971,
-    "census_geoid": "4159000"
+    "census_geoid": "4159000",
+    "core_records": 135590,
+    "rare_records": 3178
   },
   {
     "token": "providence",
     "city": "Providence",
     "state": "RI",
-    "records": 1769,
+    "records": 1780,
     "latitude": 41.823056,
     "longitude": -71.418784,
-    "census_geoid": "4459000"
+    "census_geoid": "4459000",
+    "core_records": 1769,
+    "rare_records": 11
   },
   {
     "token": "ranchocucamonga",
     "city": "Rancho Cucamonga",
     "state": "CA",
-    "records": 42838,
+    "records": 44638,
     "latitude": 34.130306,
     "longitude": -117.566067,
-    "census_geoid": "0659451"
+    "census_geoid": "0659451",
+    "core_records": 42838,
+    "rare_records": 1800
   },
   {
     "token": "rochester",
     "city": "Rochester",
     "state": "NY",
-    "records": 1177,
+    "records": 1212,
     "latitude": 43.169927,
     "longitude": -77.616891,
-    "census_geoid": "3663000"
+    "census_geoid": "3663000",
+    "core_records": 1177,
+    "rare_records": 35
   },
   {
     "token": "sandiego",
     "city": "San Diego",
     "state": "CA",
-    "records": 106192,
+    "records": 110279,
     "latitude": 32.814977,
     "longitude": -117.135562,
-    "census_geoid": "0666000"
+    "census_geoid": "0666000",
+    "core_records": 106192,
+    "rare_records": 4087
   },
   {
     "token": "sanfrancisco",
     "city": "San Francisco",
     "state": "CA",
-    "records": 55840,
+    "records": 60403,
     "latitude": 37.727239,
     "longitude": -123.032229,
-    "census_geoid": "0667000"
+    "census_geoid": "0667000",
+    "core_records": 55840,
+    "rare_records": 4563
   },
   {
     "token": "sanjose",
     "city": "San Jose",
     "state": "CA",
-    "records": 176891,
+    "records": 183556,
     "latitude": 37.296011,
     "longitude": -121.814552,
-    "census_geoid": "0668000"
+    "census_geoid": "0668000",
+    "core_records": 176891,
+    "rare_records": 6665
   },
   {
     "token": "santarosa",
     "city": "Santa Rosa",
     "state": "CA",
-    "records": 266,
+    "records": 294,
     "latitude": 38.445824,
     "longitude": -122.706181,
-    "census_geoid": "0670098"
+    "census_geoid": "0670098",
+    "core_records": 266,
+    "rare_records": 28
   },
   {
     "token": "seattle",
     "city": "Seattle",
     "state": "WA",
-    "records": 73002,
+    "records": 79464,
     "latitude": 47.619335,
     "longitude": -122.351538,
-    "census_geoid": "5363000"
+    "census_geoid": "5363000",
+    "core_records": 73002,
+    "rare_records": 6462
   },
   {
     "token": "siouxfalls",
     "city": "Sioux Falls",
     "state": "SD",
-    "records": 33050,
+    "records": 33301,
     "latitude": 43.540696,
     "longitude": -96.731962,
-    "census_geoid": "4659020"
+    "census_geoid": "4659020",
+    "core_records": 33050,
+    "rare_records": 251
   },
   {
     "token": "stlouis",
     "city": "St. Louis",
     "state": "MO",
-    "records": 44846,
+    "records": 45143,
     "latitude": 38.635699,
     "longitude": -90.244582,
-    "census_geoid": "2965000"
+    "census_geoid": "2965000",
+    "core_records": 44846,
+    "rare_records": 297
   },
   {
     "token": "washingtondc",
     "city": "Washington DC",
     "state": "DC",
-    "records": 130568,
+    "records": 132138,
     "latitude": 38.904247,
     "longitude": -77.016517,
-    "census_geoid": "1150000"
+    "census_geoid": "1150000",
+    "core_records": 130568,
+    "rare_records": 1570
   }
 ]
